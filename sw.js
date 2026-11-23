@@ -1,5 +1,5 @@
 /* Tab Studio — service worker (offline). Troque CACHE a cada versão. */
-const CACHE = 'tabstudio-v1.7.2';
+const CACHE = 'tabstudio-v1.7.3';
 const ASSETS = [
   './', './index.html', './css/app.css', './manifest.webmanifest',
   './js/app.js', './js/tabops.js', './js/store.js', './js/wake.js', './js/trackbar.js', './js/fretboard3d.js', './js/fretboard2d.js', './js/keyboard2d.js', './js/keyboard3d.js', './js/pianokeys.js',
@@ -8,7 +8,8 @@ const ASSETS = [
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png'
 ];
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  // cache: 'reload' = busca do servidor, nunca a cópia antiga guardada pelo navegador
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim()));

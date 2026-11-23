@@ -206,7 +206,7 @@ dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; ma
 .tl-bar { color: var(--ac2); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tl-strip { flex: 1; min-width: 40px; height: 10px; }
 .tl-strip canvas { display: block; }
-.tbar-body { max-height: min(34vh, 230px); overflow: auto; border-top: 1px solid var(--line); overscroll-behavior: contain; }
+.tbar-body { max-height: min(34vh, 230px); overflow: auto; border-top: 1px solid var(--line); overscroll-behavior: contain; scroll-padding-top: 20px; }
 .trackbar.collapsed .tbar-body { display: none; }
 .tb-inner { display: inline-block; min-width: 100%; }
 .tb-head { display: flex; position: sticky; top: 0; z-index: 3; background: #18161f; }

@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '1.7.2';
+  const APP_VERSION = '1.7.3';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Store = window.TabStore;
@@ -1134,12 +1134,14 @@
   if (!prefs.dimNeck) prefs.dimNeck = prefs.vizNeck.startsWith('neck') ? prefs.vizNeck.slice(4) : '3d';
   if (!prefs.dimKeys) prefs.dimKeys = prefs.vizOther.slice(4) || '3d';
   function isPerc(t) { return t.staves[0].isPercussion || t.playbackInfo.primaryChannel === 9; }
-  /* braço só para instrumentos de traste (guitarra, violão, baixo, banjo…); GP5 dá afinação até para teclado */
+  /* Cordas = só pelo tipo de instrumento (som General MIDI), nunca pela tablatura:
+     o Guitar Pro mostra tablatura e guarda afinação até em trilhas de teclado, sopro e naipe de cordas.
+     24–31 violões/guitarras · 32–39 baixos · 40–43 violino, viola, violoncelo, contrabaixo · 104–107 sitar, banjo, shamisen, koto.
+     Todo o resto (piano, órgão, sopros, voz, naipes, synth…) = Teclas. Percussão fica de fora. */
   function neckable(t) {
-    if (!isStringed(t)) return false;
+    if (!isStringed(t) || isPerc(t)) return false;
     const p = t.playbackInfo.program;
-    if ((p >= 24 && p <= 39) || (p >= 104 && p <= 107)) return true;
-    return p > 23 && t.staves[0].showTablature !== false;
+    return (p >= 24 && p <= 43) || (p >= 104 && p <= 107);
   }
   function modesFor(t) {
     if (!t || isPerc(t)) return [];
