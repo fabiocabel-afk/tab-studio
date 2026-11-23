@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '1.8.0';
+  const APP_VERSION = '1.9.0';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Store = window.TabStore;
@@ -1132,7 +1132,7 @@
     showMsg('Atalhos do editor', '<table>' + rows.map(r => '<tr><td><kbd>' + r[0] + '</kbd></td><td>' + r[1] + '</td></tr>').join('') + '</table>');
   }
   function aboutDialog() {
-    showMsg('Sobre o Tab Studio', 'Versão ' + APP_VERSION + '.<br>Leitura, reprodução, impressão e edição de tablaturas e partituras no navegador, funcionando offline.<br><br>Formatos de leitura: Guitar Pro 3, 4, 5 (.gp3/.gp4/.gp5), 6 (.gpx), 7 e 8 (.gp), MusicXML, Capella e alphaTex.<br>Formato de gravação: Guitar Pro 7/8 (.gp) e MIDI.<br><br><span class="muted">Motor de notação: alphaTab (MPL-2.0). Fonte musical: Bravura (SIL OFL). Sons: SoundFont Sonivox. 3D: three.js (MIT). Guitarra Les Paul 3D: "Generic Les Paul Guitar", de simonrepp (Blend Swap, CC0).</span>');
+    showMsg('Sobre o Tab Studio', 'Versão ' + APP_VERSION + '.<br>Leitura, reprodução, impressão e edição de tablaturas e partituras no navegador, funcionando offline.<br><br>Formatos de leitura: Guitar Pro 3, 4, 5 (.gp3/.gp4/.gp5), 6 (.gpx), 7 e 8 (.gp), MusicXML, Capella e alphaTex.<br>Formato de gravação: Guitar Pro 7/8 (.gp) e MIDI.<br><br><span class="muted">Motor de notação: alphaTab (MPL-2.0). Fonte musical: Bravura (SIL OFL). Sons: SoundFont Sonivox. 3D: three.js (MIT). Guitarra Les Paul 3D: "Generic Les Paul Guitar", de simonrepp (Blend Swap, CC0). Bateria 3D: "Rack Drum Set" (Blend Swap #85792, CC0), só a geometria, com cores próprias.</span>');
   }
 
   /* ---------------- instrumento na tela (braço/teclado, 2D/3D) ---------------- */
@@ -1141,10 +1141,11 @@
     neck2d: { file: './fretboard2d.js', cls: 'Fretboard2D', canvas: 'canvasN2d', label: 'Braço 2D', views: [['focus7', 'Foco 7 casas', '7 casas'], ['focus10', 'Foco 10 casas', '10 casas'], ['full', 'Braço inteiro', 'Inteiro']] },
     keys3d: { file: './keyboard3d.js', cls: 'Keyboard3D', canvas: 'canvasK3d', label: 'Teclado 3D', views: [['player', 'Visão do músico', 'Músico'], ['top', 'Topo', 'Topo'], ['full', 'Teclado inteiro', 'Inteiro']] },
     keys2d: { file: './keyboard2d.js', cls: 'Keyboard2D', canvas: 'canvasK2d', label: 'Teclado 2D', views: [['range', 'Faixa tocada', 'Faixa'], ['hands', 'Duas mãos', '2 mãos'], ['full', 'Teclado inteiro', 'Inteiro']] },
+    drum3d: { file: './drums3d.js', cls: 'Drums3D', canvas: 'canvasD3d', label: 'Bateria 3D', views: [['player', 'Visão do baterista', 'Baterista'], ['front', 'De frente', 'Frente'], ['top', 'De cima', 'De cima']] },
     drum2d: { file: './drums2d.js', cls: 'Drums2D', canvas: 'canvasD2d', label: 'Bateria 2D', views: [['kit', 'Bateria vista de cima', 'De cima'], ['lanes', 'Pistas (notas descendo)', 'Pistas']] }
   };
   S.viz = {}; S.vizLoading = {}; S.vizMode = null;
-  prefs.vizViews = Object.assign({ neck3d: 'player', neck2d: 'focus7', keys3d: 'player', keys2d: 'range', drum2d: 'kit' }, prefs.vizViews || {});
+  prefs.vizViews = Object.assign({ neck3d: 'player', neck2d: 'focus7', keys3d: 'player', keys2d: 'range', drum3d: 'player', drum2d: 'kit' }, prefs.vizViews || {});
   if (!prefs.vizNeck) prefs.vizNeck = 'neck3d';
   if (!prefs.vizOther) prefs.vizOther = 'keys3d';
   /* 3D/2D guardado separado para cordas e teclas; o tipo (cordas/teclas) segue a trilha escolhida */
@@ -1161,7 +1162,7 @@
     return (p >= 24 && p <= 43) || (p >= 104 && p <= 107);
   }
   function modesFor(t) {
-    if (t && isPerc(t)) return ['drum2d'];
+    if (t && isPerc(t)) return ['drum3d', 'drum2d'];
     if (!t) return [];
     return neckable(t) ? ['neck3d', 'neck2d', 'keys3d', 'keys2d'] : ['keys3d', 'keys2d'];
   }
@@ -1220,7 +1221,7 @@
     if (S.vizPick && (S.vizPick.track !== S.primary || S.vizPick.score !== S.score)) S.vizPick = null; // trocou de trilha: volta ao tipo certo
     const pick = S.vizPick ? S.vizPick.mode : null;
     const drumTrack = !!(t && isPerc(t));
-    let mode = pick || (drumTrack ? 'drum' + (prefs.dimDrum || '2d') : stringedTrack ? 'neck' + prefs.dimNeck : 'keys' + prefs.dimKeys);
+    let mode = pick || (drumTrack ? 'drum' + (prefs.dimDrum || '3d') : stringedTrack ? 'neck' + prefs.dimNeck : 'keys' + prefs.dimKeys);
     if (!modes.includes(mode)) mode = modes[0];
     S.vizMode = mode; S.threeTrack = t ? S.primary : -1;
     // três listas: cordas/teclas · 3D/2D · visão
