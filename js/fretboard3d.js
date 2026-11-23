@@ -3,9 +3,54 @@
  * balança a corda no vibrato e estica lateralmente no bend. */
 import * as THREE from 'three';
 import { OrbitControls } from '../vendor/OrbitControls.js';
+import { RoomEnvironment } from '../vendor/RoomEnvironment.js';
+import { mergeGeometries } from '../vendor/BufferGeometryUtils.js';
+import { GLTFLoader } from '../vendor/GLTFLoader.js';
+
+/* Les Paul 3D: modelo "Generic Les Paul Guitar" de simonrepp (Blend Swap, licença CC0),
+ * convertido para o sistema do app (x: pestana 0 → ponte 100, y: para cima, z: graves em +z). */
+const LP_URL = new URL('../models/lespaul.glb', import.meta.url).href;
+const LP_COLORS = {
+  'Finish': ['#45070b', 0.05, 0.32], 'Golden Metal': ['#d4a943', 1, 0.22], 'Silver Metal': ['#d8d8de', 1, 0.22],
+  'Fretboard Wood': ['#1a0e08', 0, 0.8], 'Ivory': ['#e8dcc0', 0, 0.4], 'Plastic': ['#0c0b0d', 0.1, 0.3],
+  'Knobs': ['#b8862e', 0.75, 0.28], 'Pickup Wrap Fabric': ['#2a1a10', 0.3, 0.6], 'Pickup Bobbin': ['#5c3519', 0.85, 0.35]
+};
+let LP_PROMISE = null;
+function loadLesPaul() {
+  if (!LP_PROMISE) {
+    const loader = new GLTFLoader();
+    // versão do link de visualização: o modelo vem embutido num .js (o servidor de lá não entrega .glb)
+    const src = window.TABSTUDIO_LP_B64
+      ? loader.parseAsync(Uint8Array.from(atob(window.TABSTUDIO_LP_B64), c => c.charCodeAt(0)).buffer, '')
+      : loader.loadAsync(LP_URL);
+    LP_PROMISE = src.then(gltf => {
+      const scene = gltf.scene;
+      scene.traverse(o => {
+        if (!o.isMesh) return;
+        const C = LP_COLORS[o.material.name];
+        if (C) o.material = new THREE.MeshStandardMaterial({ color: C[0], metalness: C[1], roughness: C[2], envMapIntensity: o.material.name === 'Finish' ? 0.4 : 1 });
+        o.userData.shared = true;
+      });
+      scene.updateMatrixWorld(true);
+      // altura da escala (para as marcações ficarem rentes à madeira)
+      // a escala é abaulada: pega o ponto mais alto (centro) em algumas casas
+      let top = -Infinity;
+      for (const n of [3, 7, 12, 17]) for (const z of [-1.5, -0.5, 0, 0.5, 1.5]) {
+        const ray = new THREE.Raycaster(new THREE.Vector3((fretX(n - 1) + fretX(n)) / 2, 10, z), new THREE.Vector3(0, -1, 0));
+        const hit = ray.intersectObject(scene, true).find(h => h.object.material && h.object.material.color && h.object.material.color.getHexString() === '1a0e08');
+        if (hit) top = Math.max(top, hit.point.y);
+      }
+      scene.userData.boardY = isFinite(top) ? top : 0;
+      return scene;
+    });
+    LP_PROMISE.catch(() => { LP_PROMISE = null; });
+  }
+  return LP_PROMISE;
+}
 
 const L = 100;            // comprimento de escala (pestana → ponte)
-const FRETS = 24;
+const FRETS = 22;          // Les Paul
+const MARKS = [3, 5, 7, 9, 12, 15, 17, 19, 21];
 const SEG = 180;          // segmentos ao longo da corda
 const RING = 6;           // lados do tubo da corda
 const STRING_COLORS = ['#b066ff', '#2fd36b', '#ff9a2e', '#3aa0ff', '#ffd23a', '#ff3b4f', '#26d9d9', '#ff66c4'];
@@ -54,12 +99,14 @@ export class Fretboard3D {
     this.camPreset = 'player';
 
     const r = this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'high-performance' });
-    r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
     r.outputColorSpace = THREE.SRGBColorSpace;
     r.toneMapping = THREE.ACESFilmicToneMapping; r.toneMappingExposure = 1.1;
 
     const sc = this.scene = new THREE.Scene();
     sc.background = new THREE.Color('#0d0c12');
+    // reflexos para metais (ponte, knobs, captadores) brilharem
+    try { const pm = new THREE.PMREMGenerator(r); sc.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture; sc.environmentIntensity = 0.55; pm.dispose(); } catch (e) { /* sem reflexos */ }
     sc.fog = new THREE.Fog('#0d0c12', 140, 260);
 
     this.camera = new THREE.PerspectiveCamera(32, 2, 0.5, 600);
@@ -86,6 +133,7 @@ export class Fretboard3D {
     this.ro.observe(canvas.parentElement || canvas);
 
     this.setInstrument(this.tuning);
+    loadLesPaul().then(model => { this.model = model; this.setInstrument(this.tuning); }).catch(() => { /* fica a guitarra desenhada por código */ });
     this.resize();
     this.setCamera('player');
     this._loop = this._loop.bind(this);
@@ -93,13 +141,14 @@ export class Fretboard3D {
   }
 
   /* ---------- geometria ---------- */
-  spacingAt(x) { const n = this.N; const s0 = n > 6 ? 0.78 : (n <= 4 ? 1.05 : 0.86), s1 = n > 6 ? 1.0 : (n <= 4 ? 1.45 : 1.08); return s0 + (s1 - s0) * (x / L); }
+  /* espaçamento real (escala 100 = 628 mm): guitarra 35 mm na pestana e 52 mm na ponte */
+  spacingAt(x) { const n = this.N; const s0 = n > 6 ? 1.27 : (n <= 5 ? 1.75 : 1.115), s1 = n > 6 ? 1.67 : (n <= 5 ? 2.6 : 1.655); return s0 + (s1 - s0) * (x / L); }
   // corda interna (1 = mais grave) → coordenada z
   stringZ(s, x) {
     const n = this.N; const off = (s - (n + 1) / 2) * this.spacingAt(x);
     return this.flip ? off : -off;
   }
-  halfWidth(x) { return this.spacingAt(x) * (this.N - 1) / 2 + 0.75; }
+  halfWidth(x) { return this.spacingAt(x) * (this.N - 1) / 2 + 0.6; }
 
   setFlip(v) { this.flip = !!v; this.setInstrument(this.tuning); }
 
@@ -109,87 +158,264 @@ export class Fretboard3D {
     this._clearGroup(this.static); this._clearGroup(this.dyn);
     this.strings = [];
     this._buildNeck();
+    this._mergeStatic();
     this._buildStrings();
     this.hover = this._makeMarker('#ffffff', 0.35); this.hover.visible = false; this.dyn.add(this.hover);
     this.cursorLine = null;
     this.dirty = true;
   }
-  _clearGroup(g) {
+  _clearGroup(g, keepMaterials) {
     while (g.children.length) {
       const o = g.children.pop();
-      o.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) { const ms = Array.isArray(c.material) ? c.material : [c.material]; ms.forEach(m => { if (m.map) m.map.dispose(); m.dispose(); }); } });
+      o.traverse(c => { if (c.userData.shared) return; if (c.geometry && !c.isSprite) c.geometry.dispose(); if (!keepMaterials && c.material) { const ms = Array.isArray(c.material) ? c.material : [c.material]; ms.forEach(m => { if (m.map) m.map.dispose(); m.dispose(); }); } });
     }
   }
+  /* ---------- Les Paul (contorno tirado das fotos de referência) ---------- */
   _buildNeck() {
+    if (this.model) { this._buildFromModel(); return; }
     const g = this.static;
-    const x0 = -4, x1 = fretX(FRETS) + 3.5;
-    // braço (escala) — caixa afinando em direção à pestana
-    const neckGeo = new THREE.BoxGeometry(x1 - x0, 1.2, 2, 48, 1, 1);
-    neckGeo.translate((x0 + x1) / 2, -0.6, 0);
-    const p = neckGeo.attributes.position;
-    for (let i = 0; i < p.count; i++) { const x = p.getX(i); p.setZ(i, p.getZ(i) / 1 * this.halfWidth(Math.max(0, x))); }
-    neckGeo.computeVertexNormals();
-    const wood = makeCanvasTexture(1024, 128, (c, w, h) => {
-      c.fillStyle = '#3a2216'; c.fillRect(0, 0, w, h);
-      for (let i = 0; i < 160; i++) { c.strokeStyle = `rgba(${20 + Math.random() * 40},${10 + Math.random() * 20},${5 + Math.random() * 10},${0.25 + Math.random() * 0.35})`; c.lineWidth = 1 + Math.random() * 2; c.beginPath(); const y = Math.random() * h; c.moveTo(0, y); c.bezierCurveTo(w * 0.3, y + Math.random() * 10 - 5, w * 0.6, y + Math.random() * 10 - 5, w, y + Math.random() * 6 - 3); c.stroke(); }
+    const bass = this.flip ? -1 : 1;            // lado das cordas graves (+z quando não invertido)
+    const GOLD = new THREE.MeshStandardMaterial({ color: '#d4a943', metalness: 1.0, roughness: 0.22 });
+    const DARKGOLD = new THREE.MeshStandardMaterial({ color: '#9a7330', metalness: 0.95, roughness: 0.25 });
+    const COPPER = new THREE.MeshStandardMaterial({ color: '#5c3519', metalness: 0.85, roughness: 0.38, envMapIntensity: 0.6 });
+    const BLACK = new THREE.MeshStandardMaterial({ color: '#0c0b0d', roughness: 0.3, metalness: 0.1 });
+    const CREAM = new THREE.MeshStandardMaterial({ color: '#e3d6b8', roughness: 0.4 });
+    const FINISH = new THREE.MeshStandardMaterial({ color: '#4a070c', roughness: 0.32, metalness: 0.05, envMapIntensity: 0.5 });
+    const lastFret = fretX(FRETS);
+    // escala (rosewood)
+    const boardEnd = lastFret + 1.3;
+    const board = new THREE.BoxGeometry(boardEnd + 0.3, 0.6, 2, 48, 1, 1);
+    board.translate((boardEnd - 0.3) / 2, -0.3, 0);
+    const bp = board.attributes.position;
+    for (let i = 0; i < bp.count; i++) bp.setZ(i, bp.getZ(i) * this.halfWidth(Math.max(0, bp.getX(i))));
+    board.computeVertexNormals();
+    const rosewood = makeCanvasTexture(1024, 128, (c, w, h) => {
+      c.fillStyle = '#140a05'; c.fillRect(0, 0, w, h);
+      for (let i = 0; i < 180; i++) { c.strokeStyle = `rgba(${40 + Math.random() * 35},${18 + Math.random() * 14},${8 + Math.random() * 8},${0.25 + Math.random() * 0.4})`; c.lineWidth = 0.6 + Math.random() * 1.8; c.beginPath(); const y = Math.random() * h; c.moveTo(0, y); c.bezierCurveTo(w * 0.3, y + Math.random() * 8 - 4, w * 0.6, y + Math.random() * 8 - 4, w, y + Math.random() * 5 - 2.5); c.stroke(); }
     });
-    const neck = new THREE.Mesh(neckGeo, new THREE.MeshStandardMaterial({ map: wood, roughness: 0.75, metalness: 0.0 }));
-    g.add(neck);
-    this.pickPlane = neck;
-    // corpo
-    const shape = new THREE.Shape();
-    const bx = x1 - 2, bl = 44, bw = 13;
-    shape.moveTo(bx, -bw * 0.62);
-    shape.bezierCurveTo(bx + 8, -bw * 1.05, bx + 16, -bw * 0.55, bx + 22, -bw * 0.9);
-    shape.bezierCurveTo(bx + 34, -bw * 1.4, bx + bl, -bw * 0.9, bx + bl, 0);
-    shape.bezierCurveTo(bx + bl, bw * 0.9, bx + 34, bw * 1.4, bx + 22, bw * 0.9);
-    shape.bezierCurveTo(bx + 16, bw * 0.55, bx + 8, bw * 1.05, bx, bw * 0.62);
-    shape.closePath();
-    const bodyGeo = new THREE.ExtrudeGeometry(shape, { depth: 3.2, bevelEnabled: true, bevelThickness: 0.6, bevelSize: 0.6, bevelSegments: 3, curveSegments: 32 });
-    bodyGeo.rotateX(Math.PI / 2); bodyGeo.translate(0, -1.4, 0);
+    const boardMesh = new THREE.Mesh(board, new THREE.MeshStandardMaterial({ map: rosewood, roughness: 0.85, envMapIntensity: 0.3 }));
+    g.add(boardMesh);
+    this.pickPlane = boardMesh;
+
+    // contorno do corpo: pontos medidos na foto frontal (px), convertidos para o braço (s = unidades/px)
+    const S = 0.098, PX0 = 290, PY0 = 236;
+    const X0 = L - (628 - PY0) * S;              // a ponte da foto (y=628) cai exatamente na ponte do braço
+    const W = (px, py) => [X0 + (py - PY0) * S, (PX0 - px) * S * bass];
+    const OUT = [[248, 236], [205, 225], [160, 226], [125, 240], [106, 265], [100, 300], [101, 360], [98, 420], [88, 480], [66, 540], [42, 610], [32, 690], [42, 770], [78, 840], [140, 900], [220, 940], [300, 955], [380, 945], [460, 915], [525, 860], [568, 790], [584, 710], [578, 630], [552, 560], [515, 505], [480, 470], [467, 430], [470, 385], [484, 340], [497, 306], [494, 292], [478, 291], [450, 300], [415, 316], [378, 330], [342, 340], [338, 300], [336, 236]];
+    const curve = new THREE.SplineCurve(OUT.map(p => new THREE.Vector2(...W(p[0], p[1]))));
+    curve.closed = true;
+    const pts = curve.getSpacedPoints(220);
+    const shape = new THREE.Shape(pts);
+    const bevT = 1.6, depth = 5.6, topY = -1.95;
+    const bodyGeo = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: true, bevelThickness: bevT, bevelSize: 1.2, bevelSegments: 3, curveSegments: 4 });
+    bodyGeo.rotateX(Math.PI / 2);
+    bodyGeo.translate(0, topY - bevT, 0);
     const burst = makeCanvasTexture(512, 512, (c, w, h) => {
-      const gr = c.createRadialGradient(w * 0.55, h / 2, 20, w * 0.55, h / 2, w * 0.62);
-      gr.addColorStop(0, '#e0a040'); gr.addColorStop(0.55, '#9c3f12'); gr.addColorStop(1, '#1a0a05');
+      const gr = c.createRadialGradient(w * 0.46, h * 0.5, 10, w * 0.5, h * 0.5, w * 0.62);
+      gr.addColorStop(0, '#6a0b12'); gr.addColorStop(0.55, '#45060b'); gr.addColorStop(1, '#1a0204');
       c.fillStyle = gr; c.fillRect(0, 0, w, h);
+      // flame do tampo de maple
+      for (let i = 0; i < 90; i++) { c.strokeStyle = `rgba(255,${50 + Math.random() * 40},${50 + Math.random() * 30},${0.02 + Math.random() * 0.035})`; c.lineWidth = 2 + Math.random() * 7; c.beginPath(); const y = Math.random() * h; c.moveTo(0, y); for (let x = 0; x <= w; x += 24) c.lineTo(x, y + Math.sin(x / 30 + i) * 12); c.stroke(); }
     });
-    const body = new THREE.Mesh(bodyGeo, new THREE.MeshStandardMaterial({ map: burst, roughness: 0.35, metalness: 0.05 }));
-    g.add(body);
-    // captadores
-    const pickMat = new THREE.MeshStandardMaterial({ color: '#141414', roughness: 0.5 });
-    [x1 + 6, L - 6].forEach(px => { const pk = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.6, this.halfWidth(L) * 2 + 0.8), pickMat); pk.position.set(px, -0.1, 0); g.add(pk);
-      for (let s = 1; s <= this.N; s++) { const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.1, 10), new THREE.MeshStandardMaterial({ color: '#bbb', metalness: 0.9, roughness: 0.3 })); pole.position.set(px, 0.22, this.stringZ(s, px)); g.add(pole); } });
-    // ponte
-    const bridge = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.8, this.halfWidth(L) * 2 + 0.6), new THREE.MeshStandardMaterial({ color: '#9a9aa2', metalness: 0.9, roughness: 0.25 }));
-    bridge.position.set(L + 0.9, -0.05, 0); g.add(bridge);
-    // pestana
-    const nut = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.5, this.halfWidth(0) * 2), new THREE.MeshStandardMaterial({ color: '#efe7d2', roughness: 0.4 }));
-    nut.position.set(-0.3, 0.05, 0); g.add(nut);
-    // trastes
+    burst.repeat.set(1 / 72, 1 / 58);
+    burst.offset.set(0.5 - (X0 + 36) / 72, 0.5);
+    const bodyMat = new THREE.MeshStandardMaterial({ map: burst, roughness: 0.36, metalness: 0.05, envMapIntensity: 0.25 });
+    g.add(new THREE.Mesh(bodyGeo, bodyMat));
+    // friso creme (binding) na borda do tampo
+    const bind = new THREE.CatmullRomCurve3(pts.map(p => new THREE.Vector3(p.x, topY - 0.05, p.y)), true);
+    g.add(new THREE.Mesh(new THREE.TubeGeometry(bind, 400, 0.32, 6, true), CREAM));
+
+    // braço (mogno com o mesmo acabamento vermelho do verso)
+    const neckGeo = new THREE.BoxGeometry(X0 + 8, 2.4, 2, 40, 1, 1);
+    neckGeo.translate((X0 + 8) / 2 - 0.6, -1.8, 0);
+    const np = neckGeo.attributes.position;
+    for (let i = 0; i < np.count; i++) { const x = np.getX(i), y = np.getY(i); const k = y < -2.4 ? 0.8 : 0.98; np.setZ(i, np.getZ(i) * this.halfWidth(Math.max(0, x)) * k); }
+    neckGeo.computeVertexNormals();
+    g.add(new THREE.Mesh(neckGeo, FINISH));
+
+    // captadores humbucker (capa cobre escuro, moldura preta)
+    const humbucker = (cx) => {
+      const ring = new THREE.Mesh(new THREE.BoxGeometry(7.0, 0.6, 14.2), BLACK); ring.position.set(cx, topY + 0.25, 0); g.add(ring);
+      const cover = new THREE.Mesh(new THREE.BoxGeometry(5.6, 1.1, 12.4), COPPER); cover.position.set(cx, topY + 0.85, 0); g.add(cover);
+      for (let st = 1; st <= this.N; st++) {
+        const z = this.stringZ(st, cx);
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.16, 12), DARKGOLD); pole.position.set(cx - 1.3, topY + 1.45, z); g.add(pole);
+        const screw = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.16, 12), DARKGOLD); screw.position.set(cx + 1.3, topY + 1.45, z); g.add(screw);
+      }
+    };
+    humbucker(Math.max(W(0, 382)[0], lastFret + 4.4));
+    humbucker(W(0, 562)[0]);
+    // ponte tune-o-matic dourada
+    const strW = this.halfWidth(L) * 2;
+    const brW = strW + 2.6;
+    const bridge = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.9, brW), GOLD); bridge.position.set(L + 0.3, 0.0, 0); g.add(bridge);
+    for (let st = 1; st <= this.N; st++) { const sd = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.35, 0.6), GOLD); sd.position.set(L + 0.3, 0.42, this.stringZ(st, L)); g.add(sd); }
+    [-1, 1].forEach(sg => { const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.75, 0.5, 20), GOLD); wheel.position.set(L + 0.3, topY + 0.6, sg * (brW / 2 + 0.2)); g.add(wheel);
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 2.0, 10), GOLD); post.position.set(L + 0.3, topY + 1.0, sg * (brW / 2 + 0.2)); g.add(post); });
+    // cordal (stopbar)
+    const tpX = W(0, 690)[0], tpY = topY + 1.0;
+    const tail = new THREE.Mesh(new THREE.CapsuleGeometry(0.75, strW + 2.2, 6, 16), GOLD); tail.rotation.x = Math.PI / 2; tail.position.set(tpX, tpY, 0); g.add(tail);
+    [-1, 1].forEach(sg => { const stud = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 1.3, 16), GOLD); stud.position.set(tpX, topY + 0.4, sg * (strW / 2 + 1.4)); g.add(stud); });
+    const strMat = new THREE.MeshStandardMaterial({ color: '#c9c9cf', metalness: 1, roughness: 0.3 });
+    for (let st = 1; st <= this.N; st++) {
+      const a = new THREE.Vector3(L + 0.3, 0.55, this.stringZ(st, L)), b = new THREE.Vector3(tpX - 0.3, tpY + 0.55, this.stringZ(st, L) * 0.95);
+      g.add(this._segment(a, b, 0.06, strMat));
+    }
+    // knobs dourados: 3 no lado agudo e 1 no lado grave, chave seletora no ombro (como na foto)
+    const knob = (px, py) => {
+      const k = new THREE.Group();
+      const skirt = new THREE.Mesh(new THREE.CylinderGeometry(1.45, 1.55, 0.35, 28), GOLD); skirt.position.y = 0.18; k.add(skirt);
+      const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 1.15, 1.25, 28), new THREE.MeshStandardMaterial({ color: '#b8862e', metalness: 0.75, roughness: 0.28 })); cap.position.y = 0.95; k.add(cap);
+      const top = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.95, 0.3, 28), GOLD); top.position.y = 1.7; k.add(top);
+      const [x, z] = W(px, py); k.position.set(x, topY, z); g.add(k);
+    };
+    knob(455, 627); knob(482, 697); knob(455, 770); knob(158, 312);
+    const sw = new THREE.Group();
+    const swRing = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.3, 0.2, 28), BLACK); swRing.position.y = 0.1; sw.add(swRing);
+    const swNut = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.5, 6), GOLD); swNut.position.y = 0.45; sw.add(swNut);
+    const lever = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 2.4, 8), GOLD); lever.position.set(-0.3, 1.5, 0); lever.rotation.z = 0.3; sw.add(lever);
+    const tip = new THREE.Mesh(new THREE.SphereGeometry(0.4, 16, 12), BLACK); tip.position.set(-0.65, 2.7, 0); sw.add(tip);
+    const [swx, swz] = W(178, 240); sw.position.set(swx + 0.6, topY, swz); g.add(sw);
+
+    // trastes (22) e marcações trapezoidais
     const fretMat = new THREE.MeshStandardMaterial({ color: '#d8d8de', metalness: 1.0, roughness: 0.22 });
     for (let n = 1; n <= FRETS; n++) {
       const x = fretX(n);
       const f = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, this.halfWidth(x) * 2 - 0.1, 8), fretMat);
       f.rotation.x = Math.PI / 2; f.position.set(x, 0.02, 0); g.add(f);
-      // número da casa
-      const lab = textSprite(String(n), [3, 5, 7, 9, 12, 15, 17, 19, 21, 24].includes(n) ? '#f2a33a' : '#8d86a0', 1.7);
-      const xm = (fretX(n - 1) + x) / 2;
-      lab.position.set(xm, 0.3, (this.flip ? -1 : 1) * (this.halfWidth(x) + 1.2)); g.add(lab);
+      if (MARKS.includes(n)) {
+        const lab = textSprite(String(n), n === 12 ? '#f2a33a' : '#cfc8dc', 1.9);
+        lab.position.set((fretX(n - 1) + x) / 2, 0.3, bass * (this.halfWidth(x) + 1.3)); g.add(lab);
+      }
     }
-    // marcações
-    const inlayMat = new THREE.MeshStandardMaterial({ color: '#f3ead8', roughness: 0.3, emissive: '#2a2520' });
-    const inlay = (x, z) => { const d = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.05, 20), inlayMat); d.position.set(x, 0.005, z); g.add(d); };
-    [3, 5, 7, 9, 15, 17, 19, 21].forEach(n => inlay((fretX(n - 1) + fretX(n)) / 2, 0));
-    [12, 24].forEach(n => { const x = (fretX(n - 1) + fretX(n)) / 2, hw = this.halfWidth(x); inlay(x, -hw * 0.45); inlay(x, hw * 0.45); });
-    // cabeça (headstock)
-    const head = new THREE.Mesh(new THREE.BoxGeometry(14, 0.9, this.halfWidth(0) * 2 + 1.6), new THREE.MeshStandardMaterial({ color: '#1d120c', roughness: 0.6 }));
-    head.position.set(-11, -0.9, 0); g.add(head);
+    const inlayMat = new THREE.MeshStandardMaterial({ color: '#8a8170', roughness: 0.45, transparent: true, opacity: 0.8, side: THREE.DoubleSide });
+    MARKS.forEach(n => {
+      const x1 = fretX(n - 1), x2 = fretX(n), sp = x2 - x1, xm = (x1 + x2) / 2, hw = this.halfWidth(xm);
+      const a = sp * 0.22, wNut = hw * 0.6, wBody = hw * 0.78;
+      const tr = new THREE.Shape();
+      tr.moveTo(xm - a, -wNut); tr.lineTo(xm + a, -wBody); tr.lineTo(xm + a, wBody); tr.lineTo(xm - a, wNut); tr.closePath();
+      const geo = new THREE.ShapeGeometry(tr); geo.rotateX(Math.PI / 2);
+      const m = new THREE.Mesh(geo, inlayMat); m.position.y = 0.012; g.add(m);
+    });
+    // pestana
+    const nut = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, this.halfWidth(0) * 2), new THREE.MeshStandardMaterial({ color: '#e8dcc0', roughness: 0.4 }));
+    nut.position.set(-0.3, 0.1, 0); g.add(nut);
+
+    // cabeça (frente preta, verso vermelho), inclinada 14°: lados côncavos e topo "livro aberto"
+    const hs = new THREE.Group(); hs.position.set(-0.6, -0.35, 0); hs.rotation.z = THREE.MathUtils.degToRad(14);
+    const hw0 = this.halfWidth(0) - 0.15;
+    const side = [[0, hw0], [-5, hw0 + 0.25], [-11, hw0 + 1.3], [-17, hw0 + 2.9], [-23, hw0 + 4.4], [-26.6, hw0 + 4.9], [-28.4, hw0 + 3.6], [-28.0, 2.4], [-27.0, 0]];
+    const half = side.map(([u, v]) => new THREE.Vector2(u, v));
+    const outline = half.concat(half.slice(0, -1).reverse().map(p => new THREE.Vector2(p.x, -p.y)));
+    const hsCurve = new THREE.SplineCurve(outline); hsCurve.closed = true;
+    const hsPts = hsCurve.getSpacedPoints(120);
+    const hsShape = new THREE.Shape(hsPts);
+    const hsGeo = new THREE.ExtrudeGeometry(hsShape, { depth: 1.2, bevelEnabled: true, bevelThickness: 0.2, bevelSize: 0.2, bevelSegments: 2, curveSegments: 4 });
+    hsGeo.rotateX(Math.PI / 2); hsGeo.translate(0, 0.2, 0);
+    hs.add(new THREE.Mesh(hsGeo, FINISH));
+    const face = new THREE.ShapeGeometry(hsShape); face.rotateX(Math.PI / 2);
+    const faceMesh = new THREE.Mesh(face, new THREE.MeshStandardMaterial({ color: '#09080a', roughness: 0.2, side: THREE.DoubleSide })); faceMesh.position.y = 0.42; hs.add(faceMesh);
+    // tampa do tensor (sino preto com friso)
+    const trc = new THREE.Shape(); trc.moveTo(-1.2, 0); trc.quadraticCurveTo(-1.6, 1.1, -3.6, 1.0); trc.quadraticCurveTo(-4.6, 0, -3.6, -1.0); trc.quadraticCurveTo(-1.6, -1.1, -1.2, 0);
+    const trcG = new THREE.ShapeGeometry(trc); trcG.rotateX(Math.PI / 2);
+    const trcM = new THREE.Mesh(trcG, new THREE.MeshStandardMaterial({ color: '#1a1a1d', roughness: 0.35, side: THREE.DoubleSide })); trcM.position.y = 0.45; hs.add(trcM);
+    const posts = [];
+    [-9.5, -15.5, -21.5].forEach((u, i) => {
+      [-1, 1].forEach(sg => {
+        const vEdge = hw0 + [1.6, 2.9, 4.2][i];
+        const v = sg * (vEdge - 1.5);
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.5, 1.4, 14), GOLD); post.position.set(u, 1.1, v); hs.add(post);
+        const bush = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 0.12, 16), GOLD); bush.position.set(u, 0.48, v); hs.add(bush);
+        const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 2.6, 8), GOLD); shaft.rotation.x = Math.PI / 2; shaft.position.set(u, -0.5, sg * (vEdge + 1.0)); hs.add(shaft);
+        const btn = new THREE.Mesh(new THREE.SphereGeometry(0.9, 18, 12), new THREE.MeshStandardMaterial({ color: '#141316', metalness: 0.6, roughness: 0.3 }));
+        btn.scale.set(0.95, 0.38, 1.15); btn.position.set(u, -0.5, sg * (vEdge + 2.5)); hs.add(btn);
+        posts.push({ u, v });
+      });
+    });
+    g.add(hs);
+    hs.updateMatrixWorld(true);
+    for (let st = 1; st <= this.N; st++) {
+      const z0 = this.stringZ(st, 0);
+      const onBass = st <= Math.ceil(this.N / 2);
+      const i = onBass ? st - 1 : this.N - st;
+      const pool = posts.filter(q => (q.v * bass > 0) === onBass).sort((p1, p2) => p2.u - p1.u);
+      const p = pool[Math.min(pool.length - 1, i)];
+      const wp = new THREE.Vector3(p.u, 1.7, p.v).applyMatrix4(hs.matrixWorld);
+      g.add(this._segment(new THREE.Vector3(0, 0.55, z0), wp, 0.05, strMat));
+    }
     // nomes das cordas soltas
-    for (let s = 1; s <= this.N; s++) {
-      const m = this.tuning[this.N - s];
+    for (let st = 1; st <= this.N; st++) {
+      const m = this.tuning[this.N - st];
       const name = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'][m % 12];
-      const lab = textSprite(name, STRING_COLORS[(this.N - s) % STRING_COLORS.length], 1.5);
-      lab.position.set(-2.6, 0.5, this.stringZ(s, 0)); g.add(lab);
+      const lab = textSprite(name, STRING_COLORS[(this.N - st) % STRING_COLORS.length], 1.5);
+      lab.position.set(-2.4, 1.2, this.stringZ(st, 0)); g.add(lab);
     }
+  }
+  /** guitarra a partir do modelo 3D (Les Paul real) + marcações e números do app */
+  _buildFromModel() {
+    const g = this.static;
+    const bass = this.flip ? -1 : 1;
+    const inst = this.model.clone();
+    inst.traverse(o => { if (o.isMesh) o.userData.shared = true; });
+    inst.scale.z = bass * (this.N >= 7 ? 1.25 : 1);     // canhoto espelha; 7 cordas alarga um pouco o braço
+    inst.userData.noMerge = true;
+    g.add(inst);
+    const by = this.model.userData.boardY || 0;
+    // marcações trapezoidais (a Les Paul original não tem no modelo)
+    const inlayMat = new THREE.MeshStandardMaterial({ color: '#8a8170', roughness: 0.45, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
+    MARKS.forEach(n => {
+      const x1 = fretX(n - 1), x2 = fretX(n), sp = x2 - x1, xm = (x1 + x2) / 2, hw = this.halfWidth(xm);
+      const a = sp * 0.22, wNut = hw * 0.6, wBody = hw * 0.78;
+      const tr = new THREE.Shape();
+      tr.moveTo(xm - a, -wNut); tr.lineTo(xm + a, -wBody); tr.lineTo(xm + a, wBody); tr.lineTo(xm - a, wNut); tr.closePath();
+      const geo = new THREE.ShapeGeometry(tr); geo.rotateX(Math.PI / 2);
+      const m = new THREE.Mesh(geo, inlayMat); m.position.y = by + 0.03; g.add(m);
+      const lab = textSprite(String(n), n === 12 ? '#f2a33a' : '#cfc8dc', 1.9);
+      lab.position.set(xm, 0.3, bass * (this.halfWidth(x2) + 1.3)); g.add(lab);
+    });
+    for (let st = 1; st <= this.N; st++) {
+      const m = this.tuning[this.N - st];
+      const name = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'][m % 12];
+      const lab = textSprite(name, STRING_COLORS[(this.N - st) % STRING_COLORS.length], 1.5);
+      lab.position.set(-2.4, 1.2, this.stringZ(st, 0)); g.add(lab);
+    }
+    this.pickPlane = inst;
+  }
+  /** junta as peças fixas por material: poucas chamadas de desenho = 3D leve no celular */
+  _mergeStatic() {
+    const g = this.static; g.updateMatrixWorld(true);
+    const byMat = new Map(), keep = [];
+    const models = g.children.filter(o => o.userData.noMerge);
+    g.traverse(o => {
+      if (!o.isMesh) return;
+      let p = o; while (p && p !== g) { if (p.userData.noMerge) return; p = p.parent; }
+      if (o.material.map) { keep.push(o); return; }
+      const key = o.material.uuid;
+      if (!byMat.has(key)) byMat.set(key, { mat: o.material, geos: [] });
+      let geo = o.geometry.clone().applyMatrix4(o.matrixWorld);
+      geo = geo.index ? geo.toNonIndexed() : geo;
+      for (const name of Object.keys(geo.attributes)) if (!['position', 'normal', 'uv'].includes(name)) geo.deleteAttribute(name);
+      if (!geo.attributes.uv) geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(geo.attributes.position.count * 2), 2));
+      byMat.get(key).geos.push(geo);
+    });
+    const sprites = []; g.traverse(o => { if (o.isSprite) sprites.push(o); });
+    const merged = [];
+    for (const { mat, geos } of byMat.values()) { const m = mergeGeometries(geos, false); if (m) merged.push(new THREE.Mesh(m, mat)); }
+    keep.forEach(o => { o.updateMatrixWorld(true); const geo = o.geometry.clone().applyMatrix4(o.matrixWorld); merged.push(new THREE.Mesh(geo, o.material)); });
+    const pick = this.pickPlane;
+    sprites.forEach(sp => { sp.updateMatrixWorld(true); sp.getWorldPosition(sp.position); });
+    models.forEach(m => g.remove(m));
+    this._clearGroup(g, true);
+    models.forEach(m => g.add(m));
+    merged.forEach(m => g.add(m)); sprites.forEach(sp => g.add(sp));
+    this.pickPlane = pick;
+  }
+  _segment(a, b, r, mat) {
+    const len = a.distanceTo(b);
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 6), mat);
+    m.position.copy(a).add(b).multiplyScalar(0.5);
+    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
+    return m;
   }
   _buildStrings() {
     for (let s = 1; s <= this.N; s++) {
@@ -333,14 +559,14 @@ export class Fretboard3D {
         if (fret > 0 && semis > 0) {
           const towardLow = (this.N - s) < this.N / 2; // cordas agudas empurram em direção às graves
           const dir = (towardLow ? -1 : 1) * (this.flip ? -1 : 1);
-          dz = dir * semis * this.spacingAt(fingerX) * 0.55;
+          dz = dir * semis * this.spacingAt(fingerX) * 0.35;
         }
         // vibração da corda
         vib = n && !n.dead ? 0.09 * Math.exp(-sinceHit / 1400) * rel : 0;
         phase = 2 * Math.PI * 17 * el / 1000;
       } else if (st.static) {
         level = 0.7; fingerX = fret > 0 ? fretX(fret) - (fretX(fret) - fretX(fret - 1)) * 0.3 : 0;
-        if (n && n.bend) { const semis = Math.max(...n.bend.map(b => b.value)) / 2; const towardLow = (this.N - s) < this.N / 2; dz = (towardLow ? -1 : 1) * (this.flip ? -1 : 1) * semis * this.spacingAt(fingerX) * 0.55; }
+        if (n && n.bend) { const semis = Math.max(...n.bend.map(b => b.value)) / 2; const towardLow = (this.N - s) < this.N / 2; dz = (towardLow ? -1 : 1) * (this.flip ? -1 : 1) * semis * this.spacingAt(fingerX) * 0.35; }
       }
       const changed = level > 0 || st.lastLevel > 0 || dz !== st.lastDz;
       if (changed) this._shapeString(st, fingerX, dz, vib, phase);
@@ -375,12 +601,12 @@ export class Fretboard3D {
   /* ---------- câmera / tela ---------- */
   setCamera(preset) {
     this.camPreset = preset || 'player';
-    const dirs = { player: new THREE.Vector3(0, 0.86, 0.5), top: new THREE.Vector3(0, 1, 0.04), full: new THREE.Vector3(0, 0.62, 0.78) };
+    const dirs = { player: new THREE.Vector3(0, 0.86, 0.5), top: new THREE.Vector3(0, 1, 0.04), full: new THREE.Vector3(0, 0.72, 0.68) };
     const dir = (dirs[this.camPreset] || dirs.player).clone().normalize();
     const full = this.camPreset === 'full';
     this.follow = !full;
     const aspect = this.camera.aspect || 2;
-    const wantW = full ? 122 : (aspect < 1.3 ? 30 : 50);
+    const wantW = full ? 168 : (aspect < 1.3 ? 30 : 50);
     const vfov = THREE.MathUtils.degToRad(this.camera.fov);
     const hfov = 2 * Math.atan(Math.tan(vfov / 2) * aspect);
     // distância que enquadra a largura desejada e também a largura do braço
@@ -388,7 +614,7 @@ export class Fretboard3D {
     const dH = (this.halfWidth(L) * 2 + 6) / 2 / Math.tan(vfov / 2);
     const d = Math.max(dW, dH);
     this.camOffset = dir.multiplyScalar(d);
-    const tx = full ? 52 : (this.focusX != null ? this.focusX : 24);
+    const tx = full ? 59 : (this.focusX != null ? this.focusX : 24);
     const target = new THREE.Vector3(tx, 0, 0);
     this.camera.position.copy(target).add(this.camOffset);
     this.controls.target.copy(target);
@@ -459,12 +685,25 @@ export class Fretboard3D {
     return { string: best, fret };
   }
 
+  /** aparelho lento: reduz a resolução do 3D para não atrasar a música */
+  _adapt(now) {
+    if (this._lastR) {
+      const dt = now - this._lastR;
+      if (dt < 400) { this._acc = (this._acc || 0) + dt; this._n = (this._n || 0) + 1; }
+      if (this._n >= 45) {
+        const avg = this._acc / this._n; this._acc = 0; this._n = 0;
+        const pr = this.renderer.getPixelRatio();
+        if (avg > 34 && pr > 0.6) { this.renderer.setPixelRatio(Math.max(0.6, pr * 0.75)); this.renderer.setSize(this._w || this.canvas.clientWidth, this._h || this.canvas.clientHeight, false); }
+      }
+    }
+    this._lastR = now;
+  }
   _loop(now) {
     if (!this.visible) return;
     const animating = this._update(now);
     this._follow();
     this.controls.update();
-    if (animating || this.dirty) { this.renderer.render(this.scene, this.camera); this.dirty = false; }
+    if (animating || this.dirty) { this.renderer.render(this.scene, this.camera); this.dirty = false; this._adapt(now); }
     requestAnimationFrame(this._loop);
   }
   dispose() { this.visible = false; this.ro.disconnect(); this.controls.dispose(); this.renderer.dispose(); }
