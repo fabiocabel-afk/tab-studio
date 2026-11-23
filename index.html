@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tab Studio</title>
+<meta name="theme-color" content="#16141c">
+<meta name="description" content="Leitor, player e editor de tablaturas e partituras (Guitar Pro 3 a 8, MusicXML).">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/app.css">
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.js" } }</script>
+</head>
+<body>
+<div id="app">
+
+  <!-- Barra superior -->
+  <header id="topbar">
+    <div class="brand" title="Tab Studio">
+      <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true"><rect x="2" y="2" width="28" height="28" rx="7" fill="#f2a33a"/><g stroke="#16141c" stroke-width="1.6"><line x1="7" y1="10" x2="25" y2="10"/><line x1="7" y1="14" x2="25" y2="14"/><line x1="7" y1="18" x2="25" y2="18"/><line x1="7" y1="22" x2="25" y2="22"/></g><circle cx="13" cy="14" r="2.6" fill="#16141c"/><circle cx="19" cy="18" r="2.6" fill="#16141c"/></svg>
+      <span>Tab Studio</span>
+    </div>
+    <div class="song-title" id="songTitle">—</div>
+    <nav class="tb-group" id="fileGroup">
+      <button class="tb" id="btnOpen" title="Abrir arquivo (Ctrl+O)"><i>📂</i><span>Abrir</span></button>
+      <button class="tb" id="btnNew" title="Nova música"><i>✚</i><span>Nova</span></button>
+      <button class="tb" id="btnSave" title="Salvar em .gp (Ctrl+S)"><i>💾</i><span>Salvar</span></button>
+      <button class="tb" id="btnMore" title="Mais opções"><i>⋯</i><span>Mais</span></button>
+    </nav>
+    <nav class="tb-group">
+      <button class="tb toggle" id="btnEdit" title="Modo edição (E)"><i>✎</i><span>Editar</span></button>
+      <button class="tb toggle" id="btn3d" title="Braço 3D"><i>🎸</i><span>3D</span></button>
+      <button class="tb toggle" id="btnTracks" title="Trilhas e mixer"><i>🎚</i><span>Trilhas</span></button>
+      <button class="tb toggle" id="btnView" title="Visualização"><i>👁</i><span>Ver</span></button>
+    </nav>
+    <input type="file" id="fileInput" accept=".gp,.gp3,.gp4,.gp5,.gpx,.musicxml,.mxl,.xml,.capx,.tex,.txt" hidden>
+  </header>
+
+  <!-- Menu "Mais" -->
+  <div class="menu" id="menuMore" hidden>
+    <button data-act="saveAs">💾 Salvar como .gp…</button>
+    <button data-act="midi">🎹 Exportar MIDI</button>
+    <button data-act="print">🖨 Imprimir / PDF</button>
+    <button data-act="demo">🎵 Abrir exemplo</button>
+    <button data-act="info">ℹ️ Informações da música</button>
+    <button data-act="shortcuts">⌨️ Atalhos do editor</button>
+    <button data-act="about">❔ Sobre</button>
+  </div>
+
+  <!-- Painel de visualização -->
+  <div class="popover" id="viewPanel" hidden>
+    <label>Notação
+      <select id="selStave">
+        <option value="Default">Tablatura + partitura (do arquivo)</option>
+        <option value="ScoreTab">Tablatura + partitura</option>
+        <option value="Tab">Só tablatura</option>
+        <option value="TabMixed">Tablatura com ritmo</option>
+        <option value="Score">Só partitura</option>
+      </select>
+    </label>
+    <label>Layout
+      <select id="selLayout">
+        <option value="Page">Página</option>
+        <option value="Horizontal">Contínuo (horizontal)</option>
+      </select>
+    </label>
+    <label>Zoom <span id="zoomVal">100%</span>
+      <input type="range" id="rngZoom" min="50" max="200" step="10" value="100">
+    </label>
+    <label class="chk"><input type="checkbox" id="chkFollow" checked> Rolar acompanhando o cursor</label>
+  </div>
+
+  <main id="main">
+    <!-- Painel de trilhas -->
+    <aside id="tracksPanel" class="side" hidden>
+      <div class="side-head"><b>Trilhas</b><button class="x" data-close="tracksPanel">✕</button></div>
+      <div id="trackList"></div>
+      <div class="side-foot edit-only">
+        <select id="selNewTrack"></select>
+        <button class="btn" id="btnAddTrack">+ Adicionar trilha</button>
+      </div>
+    </aside>
+
+    <section id="center">
+      <div id="welcome">
+        <div class="welcome-card">
+          <h1>Tab Studio</h1>
+          <p>Abra tablaturas do Guitar Pro (GP3, GP4, GP5, GPX, GP7/8) ou MusicXML, toque, edite, componha e imprima — tudo no navegador, funcionando offline.</p>
+          <div class="welcome-actions">
+            <button class="btn big primary" id="wOpen">📂 Abrir arquivo</button>
+            <button class="btn big" id="wNew">✚ Nova música</button>
+            <button class="btn big" id="wDemo">🎵 Exemplo</button>
+          </div>
+          <div id="draftBox" hidden></div>
+          <p class="hint">Dica: arraste um arquivo para esta janela.</p>
+        </div>
+      </div>
+      <div id="viewport">
+        <div id="alphaTab"></div>
+      </div>
+      <!-- Painel 3D -->
+      <section id="panel3d" hidden>
+        <div class="p3d-bar">
+          <b>Braço 3D</b>
+          <select id="sel3dTrack" title="Trilha mostrada no 3D"></select>
+          <button class="btn sm" data-cam="player" title="Acompanha as notas">Visão do músico</button>
+          <button class="btn sm" data-cam="top">Topo</button>
+          <button class="btn sm" data-cam="full">Braço inteiro</button>
+          <label class="chk sm"><input type="checkbox" id="chkFlip"> Inverter cordas</label>
+          <span class="p3d-msg" id="p3dMsg"></span>
+          <button class="x" data-close3d>✕</button>
+        </div>
+        <canvas id="canvas3d"></canvas>
+      </section>
+    </section>
+
+    <!-- Painel do editor -->
+    <aside id="editPanel" class="side right" hidden>
+      <div class="side-head"><b>Editor</b><span id="edTrackName" class="muted"></span></div>
+      <div class="ed-section">
+        <div class="ed-pos" id="edPos">Compasso 1 · Batida 1 · Corda 6</div>
+        <div class="ed-fill" id="edFill"></div>
+        <div class="strings-view" id="stringsView"></div>
+      </div>
+      <div class="ed-section">
+        <div class="ed-label">Casa (toque ou digite)</div>
+        <div class="fretpad" id="fretPad"></div>
+        <div class="row">
+          <button class="btn sm" data-ed="left" title="Batida anterior (←)">◀</button>
+          <button class="btn sm" data-ed="up" title="Corda acima (↑)">▲</button>
+          <button class="btn sm" data-ed="down" title="Corda abaixo (↓)">▼</button>
+          <button class="btn sm" data-ed="right" title="Próxima batida (→)">▶</button>
+          <button class="btn sm danger" data-ed="delNote" title="Apagar nota (Del)">⌫ nota</button>
+        </div>
+      </div>
+      <div class="ed-section">
+        <div class="ed-label">Duração</div>
+        <div class="row dur" id="durRow">
+          <button class="btn sm" data-dur="1" title="Semibreve">𝅝</button>
+          <button class="btn sm" data-dur="2" title="Mínima">𝅗𝅥</button>
+          <button class="btn sm" data-dur="4" title="Semínima">♩</button>
+          <button class="btn sm" data-dur="8" title="Colcheia">♪</button>
+          <button class="btn sm" data-dur="16" title="Semicolcheia">𝅘𝅥𝅯</button>
+          <button class="btn sm" data-dur="32" title="Fusa">𝅘𝅥𝅰</button>
+        </div>
+        <div class="row">
+          <button class="btn sm" data-ed="dot" title="Ponto (.)">• ponto</button>
+          <button class="btn sm" data-ed="triplet" title="Tercina">3 tercina</button>
+          <button class="btn sm" data-ed="rest" title="Pausa (R)">𝄽 pausa</button>
+        </div>
+      </div>
+      <div class="ed-section">
+        <div class="ed-label">Batidas e compassos</div>
+        <div class="row wrap">
+          <button class="btn sm" data-ed="insBeat" title="Nova batida depois (Enter)">+ batida</button>
+          <button class="btn sm" data-ed="insBeatBefore" title="Nova batida antes">+ antes</button>
+          <button class="btn sm danger" data-ed="delBeat" title="Apagar batida (Shift+Del)">− batida</button>
+          <button class="btn sm" data-ed="insBar" title="Novo compasso depois">+ compasso</button>
+          <button class="btn sm danger" data-ed="delBar" title="Apagar compasso">− compasso</button>
+          <button class="btn sm" data-ed="copyBar" title="Copiar compasso (Ctrl+C)">⧉ copiar</button>
+          <button class="btn sm" data-ed="pasteBar" title="Colar no compasso (Ctrl+V)">📋 colar</button>
+          <button class="btn sm" data-ed="repStart" title="Início de repetição">𝄆</button>
+          <button class="btn sm" data-ed="repEnd" title="Fim de repetição">𝄇</button>
+        </div>
+      </div>
+      <div class="ed-section">
+        <div class="ed-label">Técnicas na nota</div>
+        <div class="row wrap" id="fxRow">
+          <button class="btn sm" data-fx="bend" data-arg="4" title="Bend de 1 tom (B)">↑ bend 1</button>
+          <button class="btn sm" data-fx="bend" data-arg="2" title="Bend de meio tom">↑ bend ½</button>
+          <button class="btn sm" data-fx="bendRelease" title="Bend e volta">⤴ bend/volta</button>
+          <button class="btn sm" data-fx="vibrato" title="Vibrato (V) — leve/largo">∿ vibrato</button>
+          <button class="btn sm" data-fx="hammer" title="Hammer-on / Pull-off (H)">⌒ H/P</button>
+          <button class="btn sm" data-fx="slide" title="Slide (S)">⟋ slide</button>
+          <button class="btn sm" data-fx="tie" title="Ligadura (T)">‿ ligar</button>
+          <button class="btn sm" data-fx="palmMute" title="Palm mute (P)">P.M.</button>
+          <button class="btn sm" data-fx="letRing" title="Deixar soar (L)">let ring</button>
+          <button class="btn sm" data-fx="dead" title="Nota abafada (X)">✕ abafada</button>
+          <button class="btn sm" data-fx="ghost" title="Nota fantasma (G)">( ) fantasma</button>
+          <button class="btn sm" data-fx="harmonic" title="Harmônico natural">◇ harm.</button>
+          <button class="btn sm" data-fx="accent" title="Acento">&gt; acento</button>
+          <button class="btn sm" data-fx="staccato" title="Staccato">· stacc.</button>
+          <button class="btn sm" data-fx="pickDown" title="Palhetada para baixo">⊓ baixo</button>
+          <button class="btn sm" data-fx="pickUp" title="Palhetada para cima">V cima</button>
+        </div>
+      </div>
+      <div class="ed-section">
+        <div class="ed-label">Compasso atual</div>
+        <div class="row">
+          <label class="mini">Andamento <input type="number" id="inTempo" min="20" max="400" value="120"></label>
+          <label class="mini">Fórmula <input type="number" id="inNum" min="1" max="32" value="4"> / <select id="inDen"><option>2</option><option selected>4</option><option>8</option><option>16</option></select></label>
+          <button class="btn sm" id="btnApplyBar">Aplicar</button>
+        </div>
+        <div class="ed-label">Afinação da trilha</div>
+        <div class="row"><select id="selTuning"></select><button class="btn sm" id="btnApplyTuning">Aplicar</button></div>
+      </div>
+      <div class="ed-section row">
+        <button class="btn sm" id="btnUndo" title="Desfazer (Ctrl+Z)">↶ Desfazer</button>
+        <button class="btn sm" id="btnRedo" title="Refazer (Ctrl+Y)">↷ Refazer</button>
+        <button class="btn sm danger edit-only" id="btnDelTrack" title="Remover esta trilha">🗑 trilha</button>
+      </div>
+    </aside>
+  </main>
+
+  <!-- Player -->
+  <footer id="player">
+    <div class="pl-progress"><input type="range" id="rngSeek" min="0" max="1000" value="0"></div>
+    <div class="pl-row">
+      <button class="pb" id="btnStop" title="Parar">■</button>
+      <button class="pb main" id="btnPlay" title="Tocar / pausar (Espaço)" disabled>▶</button>
+      <span class="pl-time" id="plTime">0:00 / 0:00</span>
+      <span class="pl-status" id="plStatus"></span>
+      <div class="pl-right">
+        <label class="pl-ctl" title="Velocidade">⏱
+          <select id="selSpeed">
+            <option value="0.25">25%</option><option value="0.5">50%</option><option value="0.6">60%</option><option value="0.7">70%</option><option value="0.8">80%</option><option value="0.9">90%</option><option value="1" selected>100%</option><option value="1.1">110%</option><option value="1.25">125%</option><option value="1.5">150%</option>
+          </select>
+        </label>
+        <button class="pb tog" id="btnLoop" title="Repetir (selecione um trecho arrastando na partitura)">🔁</button>
+        <button class="pb tog" id="btnMetro" title="Metrônomo">🥁</button>
+        <button class="pb tog" id="btnCountIn" title="Contagem antes de tocar">1·2</button>
+        <button class="pb" id="btnClearSel" title="Limpar trecho selecionado">⨯ trecho</button>
+        <label class="pl-ctl" title="Volume geral">🔊 <input type="range" id="rngVol" min="0" max="100" value="80"></label>
+      </div>
+    </div>
+  </footer>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+  <div id="dropZone" hidden><div>Solte o arquivo para abrir</div></div>
+
+  <!-- Diálogos -->
+  <dialog id="dlgNew">
+    <form method="dialog">
+      <h3>Nova música</h3>
+      <label>Título <input id="nTitle" value="Nova música" required></label>
+      <label>Artista <input id="nArtist" value=""></label>
+      <label>Instrumento <select id="nInst"></select></label>
+      <div class="row">
+        <label>Andamento <input type="number" id="nTempo" value="120" min="20" max="400"></label>
+        <label>Fórmula <input type="number" id="nNum" value="4" min="1" max="32"> / <select id="nDen"><option>2</option><option selected>4</option><option>8</option></select></label>
+        <label>Compassos <input type="number" id="nBars" value="16" min="1" max="999"></label>
+      </div>
+      <menu><button value="cancel" class="btn">Cancelar</button><button value="ok" class="btn primary" id="nOk">Criar</button></menu>
+    </form>
+  </dialog>
+  <dialog id="dlgInfo">
+    <form method="dialog">
+      <h3>Informações da música</h3>
+      <label>Título <input id="iTitle"></label>
+      <label>Subtítulo <input id="iSub"></label>
+      <label>Artista <input id="iArtist"></label>
+      <label>Álbum <input id="iAlbum"></label>
+      <label>Letra / música de <input id="iMusic"></label>
+      <label>Transcrição <input id="iTab"></label>
+      <menu><button value="cancel" class="btn">Cancelar</button><button value="ok" class="btn primary">Aplicar</button></menu>
+    </form>
+  </dialog>
+  <dialog id="dlgMsg">
+    <form method="dialog">
+      <h3 id="msgTitle"></h3>
+      <div id="msgBody"></div>
+      <menu id="msgMenu"><button value="ok" class="btn primary">OK</button></menu>
+    </form>
+  </dialog>
+</div>
+
+<script src="vendor/alphaTab.min.js"></script>
+<script src="js/tabops.js"></script>
+<script src="js/store.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
