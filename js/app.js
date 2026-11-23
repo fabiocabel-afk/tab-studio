@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '1.9.2';
+  const APP_VERSION = '1.9.3';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Store = window.TabStore;
@@ -1165,6 +1165,8 @@
   /* 3D/2D guardado separado para cordas e teclas; o tipo (cordas/teclas) segue a trilha escolhida */
   if (!prefs.dimNeck) prefs.dimNeck = prefs.vizNeck.startsWith('neck') ? prefs.vizNeck.slice(4) : '3d';
   if (!prefs.dimKeys) prefs.dimKeys = prefs.vizOther.slice(4) || '3d';
+  /* 3D/2D é uma escolha só, para todos os instrumentos: só muda quando a pessoa muda */
+  if (prefs.dim !== '2d' && prefs.dim !== '3d') prefs.dim = prefs.dimNeck === '2d' ? '2d' : '3d';
   function isPerc(t) { return t.staves[0].isPercussion || t.playbackInfo.primaryChannel === 9; }
   /* Cordas = só pelo tipo de instrumento (som General MIDI), nunca pela tablatura:
      o Guitar Pro mostra tablatura e guarda afinação até em trilhas de teclado, sopro e naipe de cordas.
@@ -1248,9 +1250,9 @@
     const stringedTrack = !t || neckable(t);
     // cordas → braço; teclas, sopros, voz etc. → teclado. Só muda se a pessoa escolheu outro tipo para ESTA trilha
     if (S.vizPick && (S.vizPick.track !== S.primary || S.vizPick.score !== S.score)) S.vizPick = null; // trocou de trilha: volta ao tipo certo
-    const pick = S.vizPick ? S.vizPick.mode : null;
+    const pick = S.vizPick ? S.vizPick.kind + prefs.dim : null;
     const drumTrack = !!(t && isPerc(t));
-    let mode = pick || (drumTrack ? 'drum' + (prefs.dimDrum || '3d') : stringedTrack ? 'neck' + prefs.dimNeck : 'keys' + prefs.dimKeys);
+    let mode = pick || (drumTrack ? 'drum' : stringedTrack ? 'neck' : 'keys') + prefs.dim;
     if (!modes.includes(mode)) mode = modes[0];
     S.vizMode = mode; S.threeTrack = t ? S.primary : -1;
     // três listas: cordas/teclas · 3D/2D · visão
@@ -1287,8 +1289,8 @@
     if (!VIZ_MODS[v]) return;
     const t = S.score && S.score.tracks[S.primary];
     const kind = v.slice(0, 4), natural = t && isPerc(t) ? 'drum' : (!t || neckable(t)) ? 'neck' : 'keys';
-    if (kind === 'neck') prefs.dimNeck = v.slice(4); else if (kind === 'drum') prefs.dimDrum = v.slice(4); else prefs.dimKeys = v.slice(4);
-    S.vizPick = kind !== natural ? { track: S.primary, score: S.score, mode: v } : null;
+    prefs.dim = v.slice(4);
+    S.vizPick = kind !== natural ? { track: S.primary, score: S.score, kind } : null;
     savePrefs(); sync3d();
   }
   $('selVizKind').onchange = () => setVizMode($('selVizKind').value + $('selVizDim').value);
