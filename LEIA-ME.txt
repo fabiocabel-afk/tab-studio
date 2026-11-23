@@ -1,4 +1,4 @@
-Tab Studio v1.0.0 — PWA de tablaturas e partituras
+Tab Studio v1.1.0 — PWA de tablaturas e partituras
 ==================================================
 Como usar: hospede esta pasta em qualquer servidor HTTPS (ou http://localhost)
 e abra index.html. No Chrome/Edge aparece "Instalar app". Depois de aberto uma
@@ -11,7 +11,7 @@ workers de áudio/notação em file://.)
 Lê: Guitar Pro 3, 4, 5 (.gp3 .gp4 .gp5), 6 (.gpx), 7 e 8 (.gp), MusicXML (.musicxml .xml .mxl).
 Grava: Guitar Pro 7/8 (.gp) — verificado a cada salvamento — e MIDI.
 
-Versão do cache offline: tabstudio-v1.0.0 (sw.js). Ao alterar arquivos, troque
+Versão do cache offline: tabstudio-v1.1.0 (sw.js). Ao alterar arquivos, troque
 o nome do cache em sw.js para os usuários receberem a atualização.
 
 Licenças de terceiros: alphaTab (MPL-2.0), fonte Bravura (SIL OFL, font/Bravura-OFL.txt),

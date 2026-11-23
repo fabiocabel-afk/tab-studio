@@ -1,8 +1,8 @@
 /* Tab Studio — service worker (offline). Troque CACHE a cada versão. */
-const CACHE = 'tabstudio-v1.0.0';
+const CACHE = 'tabstudio-v1.1.0';
 const ASSETS = [
   './', './index.html', './css/app.css', './manifest.webmanifest',
-  './js/app.js', './js/tabops.js', './js/store.js', './js/fretboard3d.js',
+  './js/app.js', './js/tabops.js', './js/store.js', './js/wake.js', './js/trackbar.js', './js/fretboard3d.js',
   './vendor/alphaTab.min.js', './vendor/three.module.js', './vendor/three.core.js', './vendor/OrbitControls.js',
   './font/Bravura.woff2', './font/Bravura.woff', './soundfont/sonivox.sf3',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png'

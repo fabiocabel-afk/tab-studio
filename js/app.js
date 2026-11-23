@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '1.0.0';
+  const APP_VERSION = '1.1.0';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Store = window.TabStore;
@@ -11,7 +11,7 @@
 
   /* ---------------- preferências ---------------- */
   const PREF_KEY = 'tabstudio.prefs';
-  const prefs = Object.assign({ stave: 'Default', layout: 'Page', zoom: 100, follow: true, flip: false }, readPrefs());
+  const prefs = Object.assign({ stave: 'Default', layout: 'Page', zoom: 100, follow: true, flip: false, tbarCollapsed: window.innerWidth < 700 }, readPrefs());
   function readPrefs() { try { return JSON.parse(localStorage.getItem(PREF_KEY) || '{}'); } catch (e) { return {}; } }
   function savePrefs() { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch (e) { /* armazenamento indisponível */ } }
 
@@ -22,7 +22,7 @@
     undo: [], redo: [], dirty: false, clip: null, saveHandle: null,
     fretBuf: '', fretT: 0,
     playerReady: false, playing: false, endTime: 0, seeking: false,
-    mix: {}, threeTrack: 0, fb: null, fbLoading: null, lastTick: 0,
+    mix: {}, threeTrack: 0, primary: 0, fb: null, fbLoading: null, lastTick: 0,
     pendingScroll: null
   };
 
@@ -98,6 +98,22 @@
     return tun.length ? base + ' · ' + tun.length + ' cordas (' + tun.slice().reverse().map(m => NOTE_NAMES[m % 12]).join(' ') + ')' : base;
   }
 
+  /* ---------------- barra de trilhas ---------------- */
+  const Wake = window.TabWake;
+  const tbar = new window.TrackBar($('trackBar'), {
+    onSelect: (i, add) => selectTrack(i, add),
+    onMute: i => setMute(i),
+    onSolo: i => setSolo(i),
+    onBar: (track, bar) => {
+      if (track !== S.primary) selectTrack(track, false);
+      if (S.edit) { S.cur.bar = bar; S.cur.beat = 0; Ops.clampCursor(S.score, S.cur); updateEditor(); drawCursor(); ensureCursorVisible(); }
+      seekToBar(bar);
+    },
+    onRange: (a, b, track) => { if (track !== S.primary && !S.edit) selectTrack(track, false); setRangeBars(a, b); },
+    onCollapse: c => { prefs.tbarCollapsed = c; savePrefs(); }
+  });
+  tbar.setCollapsed(prefs.tbarCollapsed);
+
   /* ---------------- carregar / mostrar ---------------- */
   function setScore(score, opts) {
     opts = opts || {};
@@ -110,12 +126,13 @@
     S.cur = { track: S.tracks[0], staff: 0, bar: 0, voice: 0, beat: 0, string: 1 };
     Ops.clampCursor(score, S.cur);
     S.cur.string = Ops.stringCount(score, S.cur);
-    S.threeTrack = S.tracks[0];
+    S.primary = S.tracks[0]; S.threeTrack = S.primary;
     $('welcome').hidden = true;
     viewport.scrollTop = 0; viewport.scrollLeft = 0;
     if (S.edit) { S.viewTracksBeforeEdit = null; S.tracks = [S.cur.track]; }
     render();
-    updateTitle(); buildTrackList(); build3dTrackSelect(); updateEditor();
+    tbar.setScore(score); tbar.setPos(0); tbar.setRange(null);
+    updateTitle(); refreshTrackUI(); updateEditor();
     if (opts.enterEdit && !S.edit) toggleEdit(true);
   }
   function firstStringed(score) {
@@ -130,7 +147,81 @@
     if (!S.score) return;
     S.tracks = S.tracks.filter(i => i < S.score.tracks.length);
     if (!S.tracks.length) S.tracks = [0];
-    api.renderScore(S.score, S.tracks.slice());
+    if (api.score === S.score) api.renderTracks(S.tracks.map(i => S.score.tracks[i]));
+    else {
+      // partitura nova (arquivo ou edição): o trecho destacado apontava para a antiga
+      try { if (api.playbackRange) api.playbackRange = null; api.clearPlaybackRangeHighlight(); } catch (e) { /* nada destacado */ }
+      // contorno de um defeito do alphaTab: a limpeza não esquece as batidas antigas e o redesenho quebraria;
+      // apontar início=fim para uma batida da partitura nova faz o alphaTab ignorar o destaque.
+      try { const b0 = S.score.tracks[0].staves[0].bars[0].voices[0].beats[0]; if (b0) api.highlightPlaybackRange(b0, b0); } catch (e) { /* sem batidas */ }
+      tbar.setRange(null);
+      api.renderScore(S.score, S.tracks.slice());
+    }
+  }
+  /* seleção de trilha (barra de trilhas, painel, 3D): a principal manda no 3D */
+  function selectTrack(i, additive) {
+    if (!S.score || i < 0 || i >= S.score.tracks.length) return;
+    if (S.edit) { setEditTrack(i); return; }
+    if (additive) {
+      if (S.tracks.includes(i)) {
+        if (S.tracks.length === 1) { toast('Mostre pelo menos uma trilha'); return; }
+        S.tracks = S.tracks.filter(x => x !== i);
+        if (S.primary === i) S.primary = S.tracks[0];
+      } else { S.tracks = S.tracks.concat([i]).sort((a, b) => a - b); S.primary = i; }
+    } else { S.tracks = [i]; S.primary = i; }
+    render(); refreshTrackUI();
+  }
+  function refreshTrackUI() {
+    if (!S.score) return;
+    if (!S.tracks.includes(S.primary)) S.primary = S.tracks[0];
+    buildTrackList();
+    tbar.setState({ visible: S.tracks, primary: S.primary, mix: S.mix });
+    sync3d();
+  }
+  function setMute(i) { const m = mixOf(i); m.mute = !m.mute; api.changeTrackMute([S.score.tracks[i]], m.mute); refreshTrackUI(); }
+  function setSolo(i) { const m = mixOf(i); m.solo = !m.solo; api.changeTrackSolo([S.score.tracks[i]], m.solo); refreshTrackUI(); }
+  function seekToBar(bar) {
+    const mb = S.score && S.score.masterBars[bar]; if (!mb) return;
+    const tc = api.tickCache;
+    if (tc) { try { api.tickPosition = tc.getMasterBarStart(mb); } catch (e) { /* sem MIDI ainda */ } }
+    tbar.setPos(bar, S.playing);
+    if (!S.playing) scrollToBar(bar);
+  }
+  function scrollToBar(bar) {
+    const t = S.score.tracks[S.primary]; if (!t || !api.boundsLookup) return;
+    const b = t.staves[0].bars[bar]; const beat = b && b.voices[0] && b.voices[0].beats[0]; if (!beat) return;
+    let list = []; try { list = api.boundsLookup.findBeats(beat) || []; } catch (e) { list = []; }
+    if (!list.length) return;
+    const br = list[0].barBounds.masterBarBounds ? list[0].barBounds.masterBarBounds.realBounds : list[0].barBounds.realBounds;
+    const top = atEl.offsetTop + br.y - 30, left = atEl.offsetLeft + br.x - 30;
+    if (top < viewport.scrollTop || top > viewport.scrollTop + viewport.clientHeight - 80) viewport.scrollTop = top;
+    if (left < viewport.scrollLeft || left > viewport.scrollLeft + viewport.clientWidth - 80) viewport.scrollLeft = Math.max(0, left);
+  }
+  function rangeBars(r) {
+    if (!r || !S.score || !api.tickCache) return null;
+    let a = -1, b = -1;
+    S.score.masterBars.forEach((mb, i) => {
+      let st; try { st = api.tickCache.getMasterBarStart(mb); } catch (e) { return; }
+      const en = st + mb.calculateDuration();
+      if (a < 0 && r.startTick < en) a = i;
+      if (r.endTick > st) b = i;
+    });
+    return a >= 0 && b >= a ? [a, b] : null;
+  }
+  function setRangeBars(a, b) {
+    const tc = api.tickCache; if (!tc || !S.score) return;
+    const mA = S.score.masterBars[a], mB = S.score.masterBars[b];
+    const R = (at.synth && at.synth.PlaybackRange) ? new at.synth.PlaybackRange() : {};
+    R.startTick = tc.getMasterBarStart(mA); R.endTick = tc.getMasterBarStart(mB) + mB.calculateDuration();
+    api.playbackRange = R;
+    try {
+      const st = S.score.tracks[S.primary].staves[0];
+      const vA = st.bars[a].voices[0], vB = st.bars[b].voices[0];
+      api.highlightPlaybackRange(vA.beats[0], vB.beats[vB.beats.length - 1]);
+    } catch (e) { /* destaque é opcional */ }
+    tbar.setRange([a, b]);
+    try { api.tickPosition = R.startTick; } catch (e) { /* nada */ }
+    toast('Trecho: compassos ' + (a + 1) + ' a ' + (b + 1) + (api.isLooping ? ' (repetindo)' : ' — ligue 🔁 para repetir'));
   }
   function renderKeepScroll() {
     S.pendingScroll = { top: viewport.scrollTop, left: viewport.scrollLeft };
@@ -173,7 +264,8 @@
   api.playerStateChanged.on(e => {
     S.playing = e.state === 1;
     $('btnPlay').textContent = S.playing ? '⏸' : '▶';
-    $('plStatus').textContent = S.playing ? 'Tocando' : (S.playerReady ? 'Pausado' : $('plStatus').textContent);
+    if (S.playing) { Promise.resolve(Wake.request()).then(m => { $('plStatus').textContent = 'Tocando' + (m !== 'off' ? ' · tela sempre ligada' : ''); }); }
+    else { Wake.release(); $('plStatus').textContent = S.playerReady ? 'Pausado' : $('plStatus').textContent; }
     if (S.fb) { if (!S.playing) { S.fb.stopAll(); show3dIdle(); } }
   });
   api.playerPositionChanged.on(e => {
@@ -183,6 +275,8 @@
     S.lastTick = e.currentTick;
   });
   api.midiLoaded.on(() => applyMix());
+  api.playedBeatChanged.on(beat => { if (beat && beat.voice) tbar.setPos(beat.voice.bar.index, S.playing); });
+  api.playbackRangeChanged.on(e => { tbar.setRange(rangeBars(e.playbackRange)); });
   api.renderFinished.on(() => {
     if (S.pendingScroll) { const p = S.pendingScroll; S.pendingScroll = null; viewport.scrollTop = p.top; viewport.scrollLeft = p.left; }
   });
@@ -230,7 +324,7 @@
   }
 
   /* ---------------- player ---------------- */
-  $('btnPlay').onclick = () => { if (S.score) api.playPause(); };
+  $('btnPlay').onclick = () => { if (!S.score) return; if (!S.playing) Wake.request(); api.playPause(); };
   $('btnStop').onclick = () => { api.stop(); };
   $('rngSeek').addEventListener('input', () => { S.seeking = true; });
   $('rngSeek').addEventListener('change', () => {
@@ -241,7 +335,7 @@
   $('btnLoop').onclick = () => { api.isLooping = !api.isLooping; $('btnLoop').classList.toggle('on', api.isLooping); toast(api.isLooping ? 'Repetição ligada — arraste na partitura para escolher o trecho' : 'Repetição desligada'); };
   $('btnMetro').onclick = () => { const on = !(api.metronomeVolume > 0); api.metronomeVolume = on ? 1 : 0; $('btnMetro').classList.toggle('on', on); };
   $('btnCountIn').onclick = () => { const on = !(api.countInVolume > 0); api.countInVolume = on ? 1 : 0; $('btnCountIn').classList.toggle('on', on); };
-  $('btnClearSel').onclick = () => { api.playbackRange = null; try { api.clearPlaybackRangeHighlight(); } catch (e) { /* versão sem destaque */ } toast('Trecho limpo'); };
+  $('btnClearSel').onclick = () => { api.playbackRange = null; try { api.clearPlaybackRangeHighlight(); } catch (e) { /* versão sem destaque */ } tbar.setRange(null); toast('Trecho limpo'); };
   $('rngVol').oninput = () => { api.masterVolume = $('rngVol').value / 100; };
   api.masterVolume = 0.8;
 
@@ -260,7 +354,7 @@
     S.score.tracks.forEach(t => {
       const m = mixOf(t.index);
       const d = document.createElement('div');
-      d.className = 'trk' + (S.edit && S.cur.track === t.index ? ' editing' : '');
+      d.className = 'trk' + (S.primary === t.index ? ' editing' : '');
       d.innerHTML =
         '<input type="checkbox" title="Mostrar na partitura" ' + (S.tracks.includes(t.index) ? 'checked' : '') + (S.edit ? ' disabled' : '') + '>' +
         '<div class="tname" title="' + (S.edit ? 'Editar esta trilha' : 'Mostrar só esta trilha') + '">' + esc(t.name || ('Trilha ' + (t.index + 1))) + '</div>' +
@@ -273,14 +367,11 @@
         let tr = S.tracks.slice();
         if (chk.checked) { if (!tr.includes(t.index)) tr.push(t.index); } else tr = tr.filter(x => x !== t.index);
         if (!tr.length) { chk.checked = true; toast('Mostre pelo menos uma trilha'); return; }
-        S.tracks = tr.sort((a, b) => a - b); render();
+        S.tracks = tr.sort((a, b) => a - b); if (chk.checked) S.primary = t.index; render(); refreshTrackUI();
       };
-      name.onclick = () => {
-        if (S.edit) { setEditTrack(t.index); }
-        else { S.tracks = [t.index]; render(); buildTrackList(); }
-      };
-      bm.onclick = () => { m.mute = !m.mute; bm.classList.toggle('on', m.mute); api.changeTrackMute([t], m.mute); };
-      bs.onclick = () => { m.solo = !m.solo; bs.classList.toggle('on', m.solo); api.changeTrackSolo([t], m.solo); };
+      name.onclick = e => selectTrack(t.index, e.ctrlKey || e.metaKey || e.shiftKey);
+      bm.onclick = () => setMute(t.index);
+      bs.onclick = () => setSolo(t.index);
       d.querySelector('.vol input').oninput = ev => { m.vol = ev.target.value / 100; api.changeTrackVolume([t], m.vol); };
       box.appendChild(d);
     });
@@ -323,7 +414,7 @@
     S.score = ns;
     Ops.clampCursor(S.score, S.cur);
     markDirty();
-    renderKeepScroll(); updateEditor(); buildTrackList(); build3dTrackSelect();
+    renderKeepScroll(); tbar.setScore(S.score); updateEditor(); refreshTrackUI();
     return true;
   }
   // limita a memória do histórico (~150 MB de texto), mínimo de 10 passos
@@ -343,7 +434,7 @@
     S.score = Ops.restore(S.redo.pop(), api.settings);
     afterHistory();
   }
-  function afterHistory() { Ops.clampCursor(S.score, S.cur); markDirty(); renderKeepScroll(); updateEditor(); buildTrackList(); build3dTrackSelect(); }
+  function afterHistory() { Ops.clampCursor(S.score, S.cur); markDirty(); renderKeepScroll(); tbar.setScore(S.score); updateEditor(); refreshTrackUI(); }
 
   function markDirty() { S.dirty = true; updateTitle(); scheduleDraft(); }
 
@@ -364,8 +455,9 @@
       viewport.focus();
     } else {
       S.tracks = (S.viewTracksBeforeEdit || [S.cur.track]).filter(i => i < S.score.tracks.length);
-      if (!S.tracks.length) S.tracks = [0];
-      removeCursor(); render(); buildTrackList();
+      if (!S.tracks.includes(S.cur.track)) S.tracks = [S.cur.track];
+      S.primary = S.cur.track;
+      removeCursor(); tbar.setEditBar(null); render(); refreshTrackUI();
     }
   }
   function setEditTrack(i, noRenderSkip) {
@@ -374,9 +466,9 @@
     const changed = S.cur.track !== i || noRenderSkip || S.tracks.length !== 1 || S.tracks[0] !== i;
     S.cur.track = i; Ops.clampCursor(S.score, S.cur);
     if (S.cur.track === i && S.edit) S.tracks = [i];
-    S.threeTrack = isStringed(S.score.tracks[i]) ? i : S.threeTrack;
+    S.primary = S.cur.track;
     if (changed) render();
-    updateEditor(); buildTrackList(); build3dTrackSelect();
+    updateEditor(); refreshTrackUI();
   }
 
   function cursorBeat() { return S.score ? Ops.getBeat(S.score, S.cur) : null; }
@@ -420,6 +512,7 @@
     $('inNum').value = mb.timeSignatureNumerator; $('inDen').value = String(mb.timeSignatureDenominator);
     buildTuningSelect(t);
     $('btnUndo').disabled = !S.undo.length; $('btnRedo').disabled = !S.redo.length;
+    tbar.setEditBar(S.cur.bar); if (!S.playing) tbar.setPos(S.cur.bar);
     show3dIdle();
   }
 
@@ -586,7 +679,7 @@
     const k = e.key;
     if (ctrl && (k === 'o' || k === 'O')) { e.preventDefault(); $('fileInput').click(); return; }
     if (ctrl && (k === 's' || k === 'S')) { e.preventDefault(); saveGp(e.shiftKey); return; }
-    if (k === ' ' && !ctrl) { e.preventDefault(); if (S.score && S.playerReady) api.playPause(); return; }
+    if (k === ' ' && !ctrl) { e.preventDefault(); if (S.score && S.playerReady) { if (!S.playing) Wake.request(); api.playPause(); } return; }
     if (!ctrl && (k === 'e' || k === 'E') && !S.edit) { toggleEdit(true); return; }
     if (!S.edit) return;
     if (ctrl && (k === 'z' || k === 'Z')) { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
@@ -822,18 +915,27 @@
   }
 
   /* ---------------- 3D ---------------- */
-  function build3dTrackSelect() {
-    const sel = $('sel3dTrack'); sel.innerHTML = '';
-    if (!S.score) return;
-    let any = false;
-    S.score.tracks.forEach(t => { if (!isStringed(t)) return; any = true; const o = document.createElement('option'); o.value = t.index; o.textContent = t.name || ('Trilha ' + (t.index + 1)); sel.appendChild(o); });
-    if (!any) { $('p3dMsg').textContent = 'Nenhuma trilha de cordas nesta música.'; return; }
-    if (!S.score.tracks[S.threeTrack] || !isStringed(S.score.tracks[S.threeTrack])) S.threeTrack = +sel.options[0].value;
-    sel.value = String(S.threeTrack);
-    $('p3dMsg').textContent = '';
-    if (S.fb) S.fb.setInstrument(trackTuning(S.score.tracks[S.threeTrack]));
+  /* o 3D mostra sempre a trilha principal selecionada */
+  function sync3d() {
+    const t = S.score && S.score.tracks[S.primary];
+    $('p3dTrack').textContent = t ? (t.name || ('Trilha ' + (t.index + 1))) : '';
+    if (!t) return;
+    if (isStringed(t)) {
+      S.threeTrack = S.primary;
+      $('p3dMsg').textContent = '';
+      $('canvas3d').classList.remove('dim');
+      if (S.fb) {
+        const key = S.primary + '|' + trackTuning(t).join(',');
+        if (S.fbKey !== key) { S.fbKey = key; S.fb.setInstrument(trackTuning(t)); }
+        show3dIdle();
+      }
+    } else {
+      S.threeTrack = -1;
+      $('p3dMsg').textContent = 'Esta trilha não é de cordas — o braço 3D mostra guitarra, violão e baixo.';
+      $('canvas3d').classList.add('dim');
+      if (S.fb) { S.fb.stopAll(); S.fb.showStatic([], null); }
+    }
   }
-  $('sel3dTrack').onchange = () => { S.threeTrack = +$('sel3dTrack').value; if (S.fb && S.score) { S.fb.setInstrument(trackTuning(S.score.tracks[S.threeTrack])); show3dIdle(); } };
   function toggle3d(force) {
     const p = $('panel3d');
     const on = force === undefined ? p.hidden : force;
@@ -845,14 +947,15 @@
     S.fbLoading = import('./fretboard3d.js').then(mod => {
       S.fb = new mod.Fretboard3D($('canvas3d'), { onPick: on3dPick, flip: prefs.flip });
       $('p3dMsg').textContent = '';
-      if (S.score) { build3dTrackSelect(); S.fb.setInstrument(trackTuning(S.score.tracks[S.threeTrack] || S.score.tracks[0])); }
-      else S.fb.setInstrument([64, 59, 55, 50, 45, 40]);
+      S.fbKey = null;
+      if (S.score) sync3d(); else S.fb.setInstrument([64, 59, 55, 50, 45, 40]);
       show3dIdle();
       window.__fb = S.fb;
     }).catch(e => { $('p3dMsg').textContent = 'O 3D não pôde ser carregado neste aparelho: ' + e.message; S.fbLoading = null; });
   }
   function show3dIdle() {
     if (!S.fb || !S.score || S.playing) return;
+    if (S.threeTrack < 0) return;
     if (S.edit && S.cur.track === S.threeTrack) {
       const b = cursorBeat();
       S.fb.showStatic(b ? b.notes.map(noteFor3d) : [], S.cur.string);
@@ -860,6 +963,7 @@
   }
   function on3dPick(string, fret) {
     if (!S.edit) { toast('Ative o modo edição para escrever tocando no braço 3D'); return; }
+    if (S.threeTrack < 0) return;
     if (S.cur.track !== S.threeTrack) setEditTrack(S.threeTrack);
     S.cur.string = string;
     edSetFret(fret);
@@ -937,6 +1041,6 @@
   // ganchos para testes automatizados
   window.TabStudio = {
     version: APP_VERSION, api, Ops, state: S,
-    loadBytes, setScore, zipStore, exportMidi, buildDemo, openDemo, toggleEdit, toggle3d, edAction, edSetFret, saveGp, undo, redo, commit, drawCursor
+    loadBytes, setScore, selectTrack, seekToBar, setRangeBars, tbar, Wake: window.TabWake, zipStore, exportMidi, buildDemo, openDemo, toggleEdit, toggle3d, edAction, edSetFret, saveGp, undo, redo, commit, drawCursor
   };
 })();

@@ -103,7 +103,7 @@
       <section id="panel3d" hidden>
         <div class="p3d-bar">
           <b>Braço 3D</b>
-          <select id="sel3dTrack" title="Trilha mostrada no 3D"></select>
+          <span id="p3dTrack" class="p3d-track" title="Trilha selecionada na barra de trilhas"></span>
           <button class="btn sm" data-cam="player" title="Acompanha as notas">Visão do músico</button>
           <button class="btn sm" data-cam="top">Topo</button>
           <button class="btn sm" data-cam="full">Braço inteiro</button>
@@ -203,6 +203,9 @@
     </aside>
   </main>
 
+  <!-- Barra de trilhas (estilo Guitar Pro) -->
+  <section id="trackBar" class="trackbar"></section>
+
   <!-- Player -->
   <footer id="player">
     <div class="pl-progress"><input type="range" id="rngSeek" min="0" max="1000" value="0"></div>
@@ -268,6 +271,8 @@
 <script src="vendor/alphaTab.min.js"></script>
 <script src="js/tabops.js"></script>
 <script src="js/store.js"></script>
+<script src="js/wake.js"></script>
+<script src="js/trackbar.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>
