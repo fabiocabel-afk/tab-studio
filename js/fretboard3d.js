@@ -98,13 +98,14 @@ export class Fretboard3D {
   }
 
   /* ---------- geometria ---------- */
-  spacingAt(x) { const n = this.N; const s0 = n > 6 ? 0.78 : (n <= 4 ? 1.05 : 0.86), s1 = n > 6 ? 1.0 : (n <= 4 ? 1.45 : 1.08); return s0 + (s1 - s0) * (x / L); }
+  /* espaçamento real (escala 100 = 628 mm): guitarra 35 mm na pestana e 52 mm na ponte */
+  spacingAt(x) { const n = this.N; const s0 = n > 6 ? 1.27 : (n <= 5 ? 1.75 : 1.115), s1 = n > 6 ? 1.67 : (n <= 5 ? 2.6 : 1.655); return s0 + (s1 - s0) * (x / L); }
   // corda interna (1 = mais grave) → coordenada z
   stringZ(s, x) {
     const n = this.N; const off = (s - (n + 1) / 2) * this.spacingAt(x);
     return this.flip ? off : -off;
   }
-  halfWidth(x) { return this.spacingAt(x) * (this.N - 1) / 2 + 0.75; }
+  halfWidth(x) { return this.spacingAt(x) * (this.N - 1) / 2 + 0.6; }
 
   setFlip(v) { this.flip = !!v; this.setInstrument(this.tuning); }
 
@@ -126,16 +127,18 @@ export class Fretboard3D {
       o.traverse(c => { if (c.geometry && !c.isSprite) c.geometry.dispose(); if (!keepMaterials && c.material) { const ms = Array.isArray(c.material) ? c.material : [c.material]; ms.forEach(m => { if (m.map) m.map.dispose(); m.dispose(); }); } });
     }
   }
-  /* ---------- Les Paul ---------- */
+  /* ---------- Les Paul (contorno tirado das fotos de referência) ---------- */
   _buildNeck() {
     const g = this.static;
     const bass = this.flip ? -1 : 1;            // lado das cordas graves (+z quando não invertido)
     const GOLD = new THREE.MeshStandardMaterial({ color: '#d4a943', metalness: 1.0, roughness: 0.22 });
     const DARKGOLD = new THREE.MeshStandardMaterial({ color: '#9a7330', metalness: 0.95, roughness: 0.25 });
-    const COPPER = new THREE.MeshStandardMaterial({ color: '#7a4a22', metalness: 0.9, roughness: 0.28 });
+    const COPPER = new THREE.MeshStandardMaterial({ color: '#5c3519', metalness: 0.85, roughness: 0.38, envMapIntensity: 0.6 });
     const BLACK = new THREE.MeshStandardMaterial({ color: '#0c0b0d', roughness: 0.3, metalness: 0.1 });
+    const CREAM = new THREE.MeshStandardMaterial({ color: '#e3d6b8', roughness: 0.4 });
+    const FINISH = new THREE.MeshStandardMaterial({ color: '#4a070c', roughness: 0.32, metalness: 0.05, envMapIntensity: 0.5 });
     const lastFret = fretX(FRETS);
-    // escala (rosewood) e braço (mogno)
+    // escala (rosewood)
     const boardEnd = lastFret + 1.3;
     const board = new THREE.BoxGeometry(boardEnd + 0.3, 0.6, 2, 48, 1, 1);
     board.translate((boardEnd - 0.3) / 2, -0.3, 0);
@@ -149,90 +152,86 @@ export class Fretboard3D {
     const boardMesh = new THREE.Mesh(board, new THREE.MeshStandardMaterial({ map: rosewood, roughness: 0.85, envMapIntensity: 0.3 }));
     g.add(boardMesh);
     this.pickPlane = boardMesh;
-    const X0 = fretX(16) - 0.8;                 // início do corpo (junção no 16º traste)
-    const mahog = new THREE.MeshStandardMaterial({ color: '#5a2a14', roughness: 0.45, metalness: 0.05 });
-    const neckGeo = new THREE.BoxGeometry(X0 + 6, 2.2, 2, 40, 1, 1);
-    neckGeo.translate((X0 + 6) / 2 - 0.6, -1.7, 0);
-    const np = neckGeo.attributes.position;
-    for (let i = 0; i < np.count; i++) { const x = np.getX(i), y = np.getY(i); const k = y < -2.2 ? 0.82 : 0.97; np.setZ(i, np.getZ(i) * this.halfWidth(Math.max(0, x)) * k); }
-    neckGeo.computeVertexNormals();
-    g.add(new THREE.Mesh(neckGeo, mahog));
 
-    // corpo single-cut (u ao longo do corpo, v atravessado: + = lado grave)
-    const s = new THREE.Shape();
-    const P = (u, v) => [X0 + u, v * bass];
-    s.moveTo(...P(0, 3.9));
-    s.bezierCurveTo(...P(0, 12), ...P(5, 19.5), ...P(13, 19.5));
-    s.bezierCurveTo(...P(20, 19.5), ...P(24, 16.4), ...P(31, 16.8));
-    s.bezierCurveTo(...P(37, 17.2), ...P(44, 25.8), ...P(53, 25.8));
-    s.bezierCurveTo(...P(63, 25.8), ...P(70, 15), ...P(70, 0));
-    s.bezierCurveTo(...P(70, -15), ...P(63, -25.8), ...P(53, -25.8));
-    s.bezierCurveTo(...P(44, -25.8), ...P(38, -18.6), ...P(32, -18.2));
-    s.bezierCurveTo(...P(22, -17.6), ...P(9, -19.6), ...P(3.5, -16.5));
-    s.bezierCurveTo(...P(0.2, -14.6), ...P(2.4, -7.2), ...P(8.5, -3.9));
-    s.lineTo(...P(0, -3.9));
-    s.closePath();
-    const bevT = 1.5, depth = 6.5, topY = -1.95;
-    const bodyGeo = new THREE.ExtrudeGeometry(s, { depth, bevelEnabled: true, bevelThickness: bevT, bevelSize: 1.3, bevelSegments: 3, curveSegments: 28 });
+    // contorno do corpo: pontos medidos na foto frontal (px), convertidos para o braço (s = unidades/px)
+    const S = 0.098, PX0 = 290, PY0 = 236;
+    const X0 = L - (628 - PY0) * S;              // a ponte da foto (y=628) cai exatamente na ponte do braço
+    const W = (px, py) => [X0 + (py - PY0) * S, (PX0 - px) * S * bass];
+    const OUT = [[248, 236], [205, 225], [160, 226], [125, 240], [106, 265], [100, 300], [101, 360], [98, 420], [88, 480], [66, 540], [42, 610], [32, 690], [42, 770], [78, 840], [140, 900], [220, 940], [300, 955], [380, 945], [460, 915], [525, 860], [568, 790], [584, 710], [578, 630], [552, 560], [515, 505], [480, 470], [467, 430], [470, 385], [484, 340], [497, 306], [494, 292], [478, 291], [450, 300], [415, 316], [378, 330], [342, 340], [338, 300], [336, 236]];
+    const curve = new THREE.SplineCurve(OUT.map(p => new THREE.Vector2(...W(p[0], p[1]))));
+    curve.closed = true;
+    const pts = curve.getSpacedPoints(220);
+    const shape = new THREE.Shape(pts);
+    const bevT = 1.6, depth = 5.6, topY = -1.95;
+    const bodyGeo = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: true, bevelThickness: bevT, bevelSize: 1.2, bevelSegments: 3, curveSegments: 4 });
     bodyGeo.rotateX(Math.PI / 2);
     bodyGeo.translate(0, topY - bevT, 0);
     const burst = makeCanvasTexture(512, 512, (c, w, h) => {
-      const gr = c.createRadialGradient(w * 0.5, h * 0.5, 10, w * 0.5, h * 0.5, w * 0.62);
-      gr.addColorStop(0, '#5e0a10'); gr.addColorStop(0.55, '#420609'); gr.addColorStop(1, '#170103');
+      const gr = c.createRadialGradient(w * 0.46, h * 0.5, 10, w * 0.5, h * 0.5, w * 0.62);
+      gr.addColorStop(0, '#6a0b12'); gr.addColorStop(0.55, '#45060b'); gr.addColorStop(1, '#1a0204');
       c.fillStyle = gr; c.fillRect(0, 0, w, h);
-      // flame discreto (maple top)
-      for (let i = 0; i < 70; i++) { c.strokeStyle = `rgba(255,${60 + Math.random() * 40},${50 + Math.random() * 30},${0.02 + Math.random() * 0.03})`; c.lineWidth = 2 + Math.random() * 6; c.beginPath(); const y = Math.random() * h; c.moveTo(0, y); for (let x = 0; x <= w; x += 32) c.lineTo(x, y + Math.sin(x / 40 + i) * 10); c.stroke(); }
+      // flame do tampo de maple
+      for (let i = 0; i < 90; i++) { c.strokeStyle = `rgba(255,${50 + Math.random() * 40},${50 + Math.random() * 30},${0.02 + Math.random() * 0.035})`; c.lineWidth = 2 + Math.random() * 7; c.beginPath(); const y = Math.random() * h; c.moveTo(0, y); for (let x = 0; x <= w; x += 24) c.lineTo(x, y + Math.sin(x / 30 + i) * 12); c.stroke(); }
     });
-    burst.wrapS = burst.wrapT = THREE.ClampToEdgeWrapping;
-    burst.repeat.set(1 / 74, 1 / 56);
-    burst.offset.set(0.5 - (X0 + 35) / 74, 0.5);
-    const bodyMat = new THREE.MeshStandardMaterial({ map: burst, roughness: 0.3, metalness: 0.05, envMapIntensity: 0.4 });
+    burst.repeat.set(1 / 72, 1 / 58);
+    burst.offset.set(0.5 - (X0 + 36) / 72, 0.5);
+    const bodyMat = new THREE.MeshStandardMaterial({ map: burst, roughness: 0.36, metalness: 0.05, envMapIntensity: 0.25 });
     g.add(new THREE.Mesh(bodyGeo, bodyMat));
+    // friso creme (binding) na borda do tampo
+    const bind = new THREE.CatmullRomCurve3(pts.map(p => new THREE.Vector3(p.x, topY - 0.05, p.y)), true);
+    g.add(new THREE.Mesh(new THREE.TubeGeometry(bind, 400, 0.32, 6, true), CREAM));
 
-    // captadores humbucker (capa cobre escuro) com moldura preta
-    const strW = this.halfWidth(L) * 2;
+    // braço (mogno com o mesmo acabamento vermelho do verso)
+    const neckGeo = new THREE.BoxGeometry(X0 + 8, 2.4, 2, 40, 1, 1);
+    neckGeo.translate((X0 + 8) / 2 - 0.6, -1.8, 0);
+    const np = neckGeo.attributes.position;
+    for (let i = 0; i < np.count; i++) { const x = np.getX(i), y = np.getY(i); const k = y < -2.4 ? 0.8 : 0.98; np.setZ(i, np.getZ(i) * this.halfWidth(Math.max(0, x)) * k); }
+    neckGeo.computeVertexNormals();
+    g.add(new THREE.Mesh(neckGeo, FINISH));
+
+    // captadores humbucker (capa cobre escuro, moldura preta)
     const humbucker = (cx) => {
-      const ring = new THREE.Mesh(new THREE.BoxGeometry(7.6, 0.6, 12.8), BLACK); ring.position.set(cx, topY + 0.25, 0); g.add(ring);
-      const cover = new THREE.Mesh(new THREE.BoxGeometry(6.2, 1.1, 11.2), COPPER); cover.position.set(cx, topY + 0.85, 0); g.add(cover);
+      const ring = new THREE.Mesh(new THREE.BoxGeometry(7.0, 0.6, 14.2), BLACK); ring.position.set(cx, topY + 0.25, 0); g.add(ring);
+      const cover = new THREE.Mesh(new THREE.BoxGeometry(5.6, 1.1, 12.4), COPPER); cover.position.set(cx, topY + 0.85, 0); g.add(cover);
       for (let st = 1; st <= this.N; st++) {
         const z = this.stringZ(st, cx);
-        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.16, 12), DARKGOLD); pole.position.set(cx - 1.4, topY + 1.45, z); g.add(pole);
-        const screw = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.16, 12), DARKGOLD); screw.position.set(cx + 1.4, topY + 1.45, z); g.add(screw);
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.16, 12), DARKGOLD); pole.position.set(cx - 1.3, topY + 1.45, z); g.add(pole);
+        const screw = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.16, 12), DARKGOLD); screw.position.set(cx + 1.3, topY + 1.45, z); g.add(screw);
       }
     };
-    humbucker(lastFret + 5.6);
-    humbucker(L - 6.2);
+    humbucker(Math.max(W(0, 382)[0], lastFret + 4.4));
+    humbucker(W(0, 562)[0]);
     // ponte tune-o-matic dourada
-    const brW = strW + 3.4;
+    const strW = this.halfWidth(L) * 2;
+    const brW = strW + 2.6;
     const bridge = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.9, brW), GOLD); bridge.position.set(L + 0.3, 0.0, 0); g.add(bridge);
-    for (let st = 1; st <= this.N; st++) { const sd = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.35, 0.55), GOLD); sd.position.set(L + 0.3, 0.42, this.stringZ(st, L)); g.add(sd); }
+    for (let st = 1; st <= this.N; st++) { const sd = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.35, 0.6), GOLD); sd.position.set(L + 0.3, 0.42, this.stringZ(st, L)); g.add(sd); }
     [-1, 1].forEach(sg => { const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.75, 0.5, 20), GOLD); wheel.position.set(L + 0.3, topY + 0.6, sg * (brW / 2 + 0.2)); g.add(wheel);
       const post = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 2.0, 10), GOLD); post.position.set(L + 0.3, topY + 1.0, sg * (brW / 2 + 0.2)); g.add(post); });
-    // tailpiece stopbar
-    const tpX = L + 7.2, tpY = topY + 1.0;
-    const tail = new THREE.Mesh(new THREE.CapsuleGeometry(0.75, strW + 2.6, 6, 16), GOLD); tail.rotation.x = Math.PI / 2; tail.position.set(tpX, tpY, 0); g.add(tail);
-    [-1, 1].forEach(sg => { const stud = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 1.3, 16), GOLD); stud.position.set(tpX, topY + 0.4, sg * (strW / 2 + 1.6)); g.add(stud); });
-    // cordas fixas: ponte → tailpiece
+    // cordal (stopbar)
+    const tpX = W(0, 690)[0], tpY = topY + 1.0;
+    const tail = new THREE.Mesh(new THREE.CapsuleGeometry(0.75, strW + 2.2, 6, 16), GOLD); tail.rotation.x = Math.PI / 2; tail.position.set(tpX, tpY, 0); g.add(tail);
+    [-1, 1].forEach(sg => { const stud = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 1.3, 16), GOLD); stud.position.set(tpX, topY + 0.4, sg * (strW / 2 + 1.4)); g.add(stud); });
     const strMat = new THREE.MeshStandardMaterial({ color: '#c9c9cf', metalness: 1, roughness: 0.3 });
     for (let st = 1; st <= this.N; st++) {
-      const a = new THREE.Vector3(L + 0.3, 0.55, this.stringZ(st, L)), b = new THREE.Vector3(tpX - 0.3, tpY + 0.55, this.stringZ(st, L) * 1.05);
+      const a = new THREE.Vector3(L + 0.3, 0.55, this.stringZ(st, L)), b = new THREE.Vector3(tpX - 0.3, tpY + 0.55, this.stringZ(st, L) * 0.95);
       g.add(this._segment(a, b, 0.06, strMat));
     }
-    // knobs dourados (4) e chave seletora
-    const knob = (u, v) => {
+    // knobs dourados: 3 no lado agudo e 1 no lado grave, chave seletora no ombro (como na foto)
+    const knob = (px, py) => {
       const k = new THREE.Group();
       const skirt = new THREE.Mesh(new THREE.CylinderGeometry(1.45, 1.55, 0.35, 28), GOLD); skirt.position.y = 0.18; k.add(skirt);
       const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 1.15, 1.25, 28), new THREE.MeshStandardMaterial({ color: '#b8862e', metalness: 0.75, roughness: 0.28 })); cap.position.y = 0.95; k.add(cap);
       const top = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.95, 0.3, 28), GOLD); top.position.y = 1.7; k.add(top);
-      k.position.set(X0 + u, topY, v * bass); g.add(k);
+      const [x, z] = W(px, py); k.position.set(x, topY, z); g.add(k);
     };
-    knob(45, -13.2); knob(53, -19.2); knob(57.5, -9.4); knob(65, -14.8);
+    knob(455, 627); knob(482, 697); knob(455, 770); knob(158, 312);
     const sw = new THREE.Group();
-    const swRing = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.6, 0.2, 28), BLACK); swRing.position.y = 0.1; sw.add(swRing);
-    const swNut = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 0.5, 6), GOLD); swNut.position.y = 0.45; sw.add(swNut);
-    const lever = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 2.6, 8), GOLD); lever.position.set(0.4, 1.6, 0); lever.rotation.z = -0.3; sw.add(lever);
-    const tip = new THREE.Mesh(new THREE.SphereGeometry(0.42, 16, 12), new THREE.MeshStandardMaterial({ color: '#e9dcc0', roughness: 0.4 })); tip.position.set(0.8, 2.9, 0); sw.add(tip);
-    sw.position.set(X0 + 9, topY, 14.5 * bass); g.add(sw);
+    const swRing = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.3, 0.2, 28), BLACK); swRing.position.y = 0.1; sw.add(swRing);
+    const swNut = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.5, 6), GOLD); swNut.position.y = 0.45; sw.add(swNut);
+    const lever = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 2.4, 8), GOLD); lever.position.set(-0.3, 1.5, 0); lever.rotation.z = 0.3; sw.add(lever);
+    const tip = new THREE.Mesh(new THREE.SphereGeometry(0.4, 16, 12), BLACK); tip.position.set(-0.65, 2.7, 0); sw.add(tip);
+    const [swx, swz] = W(178, 240); sw.position.set(swx + 0.6, topY, swz); g.add(sw);
 
     // trastes (22) e marcações trapezoidais
     const fretMat = new THREE.MeshStandardMaterial({ color: '#d8d8de', metalness: 1.0, roughness: 0.22 });
@@ -245,48 +244,59 @@ export class Fretboard3D {
         lab.position.set((fretX(n - 1) + x) / 2, 0.3, bass * (this.halfWidth(x) + 1.3)); g.add(lab);
       }
     }
-    const inlayMat = new THREE.MeshStandardMaterial({ color: '#7d7462', roughness: 0.45, transparent: true, opacity: 0.75 });
+    const inlayMat = new THREE.MeshStandardMaterial({ color: '#8a8170', roughness: 0.45, transparent: true, opacity: 0.8, side: THREE.DoubleSide });
     MARKS.forEach(n => {
       const x1 = fretX(n - 1), x2 = fretX(n), sp = x2 - x1, xm = (x1 + x2) / 2, hw = this.halfWidth(xm);
-      const a = sp * 0.24, wNut = hw * 0.62, wBody = hw * 0.8;
+      const a = sp * 0.22, wNut = hw * 0.6, wBody = hw * 0.78;
       const tr = new THREE.Shape();
       tr.moveTo(xm - a, -wNut); tr.lineTo(xm + a, -wBody); tr.lineTo(xm + a, wBody); tr.lineTo(xm - a, wNut); tr.closePath();
       const geo = new THREE.ShapeGeometry(tr); geo.rotateX(Math.PI / 2);
-      const m = new THREE.Mesh(geo, inlayMat); m.position.y = 0.012; m.material.side = THREE.DoubleSide; g.add(m);
+      const m = new THREE.Mesh(geo, inlayMat); m.position.y = 0.012; g.add(m);
     });
     // pestana
     const nut = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, this.halfWidth(0) * 2), new THREE.MeshStandardMaterial({ color: '#e8dcc0', roughness: 0.4 }));
     nut.position.set(-0.3, 0.1, 0); g.add(nut);
-    // headstock "open book" preto, inclinado 14°
+
+    // cabeça (frente preta, verso vermelho), inclinada 14°: lados côncavos e topo "livro aberto"
     const hs = new THREE.Group(); hs.position.set(-0.6, -0.35, 0); hs.rotation.z = THREE.MathUtils.degToRad(14);
-    const hsh = new THREE.Shape(); const hw0 = this.halfWidth(0) - 0.2;
-    hsh.moveTo(0, -hw0); hsh.bezierCurveTo(-5, -hw0 - 0.5, -9, -6.6, -14, -7.4); hsh.bezierCurveTo(-20, -8.1, -26, -7.6, -28.6, -5.4);
-    hsh.quadraticCurveTo(-27.4, -2.2, -26.4, 0); hsh.quadraticCurveTo(-27.4, 2.2, -28.6, 5.4);
-    hsh.bezierCurveTo(-26, 7.6, -20, 8.1, -14, 7.4); hsh.bezierCurveTo(-9, 6.6, -5, hw0 + 0.5, 0, hw0); hsh.closePath();
-    const hsGeo = new THREE.ExtrudeGeometry(hsh, { depth: 1.3, bevelEnabled: true, bevelThickness: 0.2, bevelSize: 0.2, bevelSegments: 2, curveSegments: 24 });
+    const hw0 = this.halfWidth(0) - 0.15;
+    const side = [[0, hw0], [-5, hw0 + 0.25], [-11, hw0 + 1.3], [-17, hw0 + 2.9], [-23, hw0 + 4.4], [-26.6, hw0 + 4.9], [-28.4, hw0 + 3.6], [-28.0, 2.4], [-27.0, 0]];
+    const half = side.map(([u, v]) => new THREE.Vector2(u, v));
+    const outline = half.concat(half.slice(0, -1).reverse().map(p => new THREE.Vector2(p.x, -p.y)));
+    const hsCurve = new THREE.SplineCurve(outline); hsCurve.closed = true;
+    const hsPts = hsCurve.getSpacedPoints(120);
+    const hsShape = new THREE.Shape(hsPts);
+    const hsGeo = new THREE.ExtrudeGeometry(hsShape, { depth: 1.2, bevelEnabled: true, bevelThickness: 0.2, bevelSize: 0.2, bevelSegments: 2, curveSegments: 4 });
     hsGeo.rotateX(Math.PI / 2); hsGeo.translate(0, 0.2, 0);
-    hs.add(new THREE.Mesh(hsGeo, new THREE.MeshStandardMaterial({ color: '#0b0a0c', roughness: 0.22 })));
+    hs.add(new THREE.Mesh(hsGeo, FINISH));
+    const face = new THREE.ShapeGeometry(hsShape); face.rotateX(Math.PI / 2);
+    const faceMesh = new THREE.Mesh(face, new THREE.MeshStandardMaterial({ color: '#09080a', roughness: 0.2, side: THREE.DoubleSide })); faceMesh.position.y = 0.42; hs.add(faceMesh);
+    // tampa do tensor (sino preto com friso)
+    const trc = new THREE.Shape(); trc.moveTo(-1.2, 0); trc.quadraticCurveTo(-1.6, 1.1, -3.6, 1.0); trc.quadraticCurveTo(-4.6, 0, -3.6, -1.0); trc.quadraticCurveTo(-1.6, -1.1, -1.2, 0);
+    const trcG = new THREE.ShapeGeometry(trc); trcG.rotateX(Math.PI / 2);
+    const trcM = new THREE.Mesh(trcG, new THREE.MeshStandardMaterial({ color: '#1a1a1d', roughness: 0.35, side: THREE.DoubleSide })); trcM.position.y = 0.45; hs.add(trcM);
     const posts = [];
     [-9.5, -15.5, -21.5].forEach((u, i) => {
       [-1, 1].forEach(sg => {
-        const v = sg * (6.2 - i * 0.2) * 0.86;
-        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.5, 1.4, 14), GOLD); post.position.set(u, 0.9, v); hs.add(post);
-        const btn = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 1.3, 14), new THREE.MeshStandardMaterial({ color: '#b9a477', roughness: 0.35, metalness: 0.3 }));
-        btn.rotation.x = Math.PI / 2; btn.position.set(u, -0.6, sg * 8.6); hs.add(btn);
-        const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 2.4, 8), GOLD); shaft.rotation.x = Math.PI / 2; shaft.position.set(u, -0.6, sg * 7.3); hs.add(shaft);
+        const vEdge = hw0 + [1.6, 2.9, 4.2][i];
+        const v = sg * (vEdge - 1.5);
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.5, 1.4, 14), GOLD); post.position.set(u, 1.1, v); hs.add(post);
+        const bush = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 0.12, 16), GOLD); bush.position.set(u, 0.48, v); hs.add(bush);
+        const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 2.6, 8), GOLD); shaft.rotation.x = Math.PI / 2; shaft.position.set(u, -0.5, sg * (vEdge + 1.0)); hs.add(shaft);
+        const btn = new THREE.Mesh(new THREE.SphereGeometry(0.9, 18, 12), new THREE.MeshStandardMaterial({ color: '#141316', metalness: 0.6, roughness: 0.3 }));
+        btn.scale.set(0.95, 0.38, 1.15); btn.position.set(u, -0.5, sg * (vEdge + 2.5)); hs.add(btn);
         posts.push({ u, v });
       });
     });
     g.add(hs);
-    // cordas fixas: pestana → tarraxas (graves do lado grave)
     hs.updateMatrixWorld(true);
     for (let st = 1; st <= this.N; st++) {
       const z0 = this.stringZ(st, 0);
-      const onBass = st <= Math.ceil(this.N / 2);            // graves no lado grave, agudas no lado agudo
-      const i = onBass ? st - 1 : this.N - st;               // Mi grave e Mi aguda nas tarraxas mais perto da pestana
+      const onBass = st <= Math.ceil(this.N / 2);
+      const i = onBass ? st - 1 : this.N - st;
       const pool = posts.filter(q => (q.v * bass > 0) === onBass).sort((p1, p2) => p2.u - p1.u);
       const p = pool[Math.min(pool.length - 1, i)];
-      const wp = new THREE.Vector3(p.u, 1.5, p.v).applyMatrix4(hs.matrixWorld);
+      const wp = new THREE.Vector3(p.u, 1.7, p.v).applyMatrix4(hs.matrixWorld);
       g.add(this._segment(new THREE.Vector3(0, 0.55, z0), wp, 0.05, strMat));
     }
     // nomes das cordas soltas

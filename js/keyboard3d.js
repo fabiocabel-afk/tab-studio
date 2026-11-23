@@ -121,9 +121,11 @@ export class Keyboard3D {
       else if (k.release) { const d = now - k.release; lv = d < 220 ? 0.6 * (1 - d / 220) : 0; if (d < 240) anim = true; else k.release = 0; }
       if (lv > 0 || k.lv > 0) {
         k.pivot.rotation.x = 0.075 * Math.min(1, lv * 1.4);
+        // a tecla inteira ganha a cor da mão (branca e preta), não só afunda
         const col = new THREE.Color(HAND_COLORS[k.hand || 'X']);
-        k.mat.emissive = col; k.mat.emissiveIntensity = lv * (k.black ? 1.4 : 0.9);
-        if (!k.black) k.mat.color.set(lv > 0 ? '#fff4de' : '#f3efe6');
+        const base = new THREE.Color(k.black ? '#141317' : '#f3efe6');
+        k.mat.color.copy(base).lerp(col, lv > 0 ? Math.min(1, 0.55 + lv) : 0);
+        k.mat.emissive = col; k.mat.emissiveIntensity = lv * (k.black ? 0.9 : 0.3);
         this._tag(k, lv > 0.3);
         k.lv = lv;
       }

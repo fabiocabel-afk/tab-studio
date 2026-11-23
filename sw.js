@@ -1,5 +1,5 @@
 /* Tab Studio — service worker (offline). Troque CACHE a cada versão. */
-const CACHE = 'tabstudio-v1.2.0';
+const CACHE = 'tabstudio-v1.3.0';
 const ASSETS = [
   './', './index.html', './css/app.css', './manifest.webmanifest',
   './js/app.js', './js/tabops.js', './js/store.js', './js/wake.js', './js/trackbar.js', './js/fretboard3d.js', './js/fretboard2d.js', './js/keyboard2d.js', './js/keyboard3d.js', './js/pianokeys.js',

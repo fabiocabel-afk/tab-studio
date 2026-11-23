@@ -52,11 +52,10 @@
   <div class="popover" id="viewPanel" hidden>
     <label>Notação
       <select id="selStave">
-        <option value="Default">Tablatura + partitura (do arquivo)</option>
         <option value="ScoreTab">Tablatura + partitura</option>
-        <option value="Tab">Só tablatura</option>
-        <option value="TabMixed">Tablatura com ritmo</option>
-        <option value="Score">Só partitura</option>
+        <option value="TabRhythm">Tablatura + ritmo</option>
+        <option value="Tab">Tablatura</option>
+        <option value="Score">Partitura</option>
       </select>
     </label>
     <label>Layout
@@ -102,7 +101,8 @@
       <!-- Painel 3D -->
       <section id="panel3d" hidden>
         <div class="p3d-bar">
-          <select id="selVizMode" title="Instrumento: braço ou teclado, 2D ou 3D"></select>
+          <select id="selVizKind" title="Mostrar como cordas (braço) ou teclas (teclado)"></select>
+          <select id="selVizDim" title="2D ou 3D"><option value="3d">3D</option><option value="2d">2D</option></select>
           <select id="selVizView" title="Visão"></select>
           <span class="p3d-msg" id="p3dMsg"></span>
           <button class="x" data-close3d title="Fechar">✕</button>
@@ -211,17 +211,19 @@
   <footer id="player">
     <div class="pl-progress"><input type="range" id="rngSeek" min="0" max="1000" value="0"></div>
     <div class="pl-row">
-      <button class="pb" id="btnStop" title="Parar">■</button>
-      <button class="pb main" id="btnPlay" title="Tocar / pausar (Espaço)" disabled>▶</button>
-      <span class="pl-time" id="plTime">0:00 / 0:00</span>
-      <span class="pl-status" id="plStatus"></span>
+      <div class="pl-left"><span class="pl-status" id="plStatus"></span></div>
+      <div class="pl-center">
+        <button class="pb" id="btnStop" title="Parar">■</button>
+        <button class="pb main" id="btnPlay" title="Tocar / pausar (Espaço)" disabled>▶</button>
+        <span class="pl-time" id="plTime">0:00 / 0:00</span>
+      </div>
       <div class="pl-right">
         <label class="pl-ctl" title="Velocidade">⏱
           <select id="selSpeed">
             <option value="0.25">25%</option><option value="0.5">50%</option><option value="0.6">60%</option><option value="0.7">70%</option><option value="0.8">80%</option><option value="0.9">90%</option><option value="1" selected>100%</option><option value="1.1">110%</option><option value="1.25">125%</option><option value="1.5">150%</option>
           </select>
         </label>
-        <button class="pb tog" id="btnLoop" title="Repetir (selecione um trecho arrastando na partitura)">🔁</button>
+        <button class="pb tog" id="btnLoop" title="Repetir um trecho">🔁</button>
         <button class="pb tog" id="btnMetro" title="Metrônomo">🥁</button>
         <button class="pb tog" id="btnCountIn" title="Contagem antes de tocar">1·2</button>
         <button class="pb" id="btnClearSel" title="Limpar trecho selecionado">⨯ trecho</button>
@@ -229,6 +231,27 @@
       </div>
     </div>
   </footer>
+
+  <!-- Painel de repetição -->
+  <div class="loop-panel" id="loopPanel" hidden>
+    <div class="lp-head"><b>🔁 Repetir trecho</b><button class="x" id="lpClose" title="Fechar">✕</button></div>
+    <div class="lp-row">
+      <label>Início <input type="number" id="lpStart" min="1" value="1" inputmode="numeric"></label>
+      <label>Fim <input type="number" id="lpEnd" min="1" value="4" inputmode="numeric"></label>
+      <span class="muted" id="lpHint">Toque num campo e depois no compasso da partitura.</span>
+    </div>
+    <label class="chk"><input type="checkbox" id="lpProg"> Aumentar a velocidade a cada volta</label>
+    <div class="lp-row" id="lpProgRow">
+      <label>Começa em <input type="number" id="lpFrom" min="10" max="300" value="50"> %</label>
+      <label>Até <input type="number" id="lpTo" min="10" max="300" value="100"> %</label>
+      <label>Aumenta <input type="number" id="lpStep" min="1" max="100" value="5"> % por volta</label>
+    </div>
+    <div class="lp-row lp-actions">
+      <span class="lp-status" id="lpStatus"></span>
+      <button class="btn sm danger" id="lpOff">Desligar</button>
+      <button class="btn sm primary" id="lpApply">Repetir</button>
+    </div>
+  </div>
 
   <div id="toast" role="status" aria-live="polite"></div>
   <div id="dropZone" hidden><div>Solte o arquivo para abrir</div></div>

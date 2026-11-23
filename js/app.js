@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '1.2.0';
+  const APP_VERSION = '1.3.0';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Store = window.TabStore;
@@ -11,7 +11,10 @@
 
   /* ---------------- preferências ---------------- */
   const PREF_KEY = 'tabstudio.prefs';
-  const prefs = Object.assign({ stave: 'Default', layout: 'Page', zoom: 100, follow: true, flip: false, tbarCollapsed: window.innerWidth < 700 }, readPrefs());
+  const prefs = Object.assign({ stave: 'ScoreTab', layout: 'Page', zoom: 100, follow: true, flip: false, tbarCollapsed: window.innerWidth < 700 }, readPrefs());
+  /* notação: 4 opções; "Tablatura + ritmo" = tablatura com as hastes do ritmo */
+  const STAVES = { ScoreTab: ['ScoreTab', 'Automatic'], TabRhythm: ['Tab', 'ShowWithBars'], Tab: ['Tab', 'Hidden'], Score: ['Score', 'Automatic'] };
+  function staveOf(v) { return STAVES[v] ? v : ({ Default: 'ScoreTab', TabMixed: 'TabRhythm' }[v] || 'ScoreTab'); }
   function readPrefs() { try { return JSON.parse(localStorage.getItem(PREF_KEY) || '{}'); } catch (e) { return {}; } }
   function savePrefs() { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch (e) { /* armazenamento indisponível */ } }
 
@@ -36,8 +39,9 @@
       includeNoteBounds: true,
       engine: 'svg'
     },
+    notation: { rhythmMode: at.TabRhythmMode[STAVES[staveOf(prefs.stave)][1]] },
     display: {
-      staveProfile: at.StaveProfile[prefs.stave] ?? at.StaveProfile.Default,
+      staveProfile: at.StaveProfile[STAVES[staveOf(prefs.stave)][0]],
       layoutMode: at.LayoutMode[prefs.layout] ?? at.LayoutMode.Page,
       scale: prefs.zoom / 100
     },
@@ -272,11 +276,23 @@
     S.endTime = e.endTime;
     $('plTime').textContent = fmtTime(e.currentTime) + ' / ' + fmtTime(e.endTime);
     if (!S.seeking && e.endTime > 0) $('rngSeek').value = Math.round(e.currentTime / e.endTime * 1000);
+    loopCycleCheck(e.currentTick);
     S.lastTick = e.currentTick;
   });
   api.midiLoaded.on(() => applyMix());
   api.playedBeatChanged.on(beat => { if (beat && beat.voice) tbar.setPos(beat.voice.bar.index, S.playing); });
-  api.playbackRangeChanged.on(e => { tbar.setRange(rangeBars(e.playbackRange)); });
+  api.playbackRangeChanged.on(e => {
+    const rb = rangeBars(e.playbackRange); tbar.setRange(rb);
+    if (rb && !$('loopPanel').hidden) { $('lpStart').value = rb[0] + 1; $('lpEnd').value = rb[1] + 1; }
+  });
+  // painel de repetição aberto: tocar num compasso preenche o campo escolhido
+  api.beatMouseDown.on(beat => {
+    if ($('loopPanel').hidden || !S.loopPick || !beat) return;
+    const bar = beat.voice.bar.index + 1;
+    if (S.loopPick === 'start') { $('lpStart').value = bar; if (+$('lpEnd').value < bar) $('lpEnd').value = bar; setLoopPick('end'); }
+    else { $('lpEnd').value = bar; if (+$('lpStart').value > bar) $('lpStart').value = bar; setLoopPick(null); }
+    previewLoop();
+  });
   api.renderFinished.on(() => {
     if (S.pendingScroll) { const p = S.pendingScroll; S.pendingScroll = null; viewport.scrollTop = p.top; viewport.scrollLeft = p.left; }
   });
@@ -346,13 +362,103 @@
     S.seeking = false;
     if (S.endTime > 0) api.timePosition = $('rngSeek').value / 1000 * S.endTime;
   });
-  $('selSpeed').onchange = () => { api.playbackSpeed = parseFloat($('selSpeed').value); };
-  $('btnLoop').onclick = () => { api.isLooping = !api.isLooping; $('btnLoop').classList.toggle('on', api.isLooping); toast(api.isLooping ? 'Repetição ligada — arraste na partitura para escolher o trecho' : 'Repetição desligada'); };
+  $('selSpeed').onchange = () => { api.playbackSpeed = parseFloat($('selSpeed').value); if (S.loopProg) { S.loopProg = null; updateLoopStatus(); toast('Velocidade manual: aumento automático pausado'); } };
   $('btnMetro').onclick = () => { const on = !(api.metronomeVolume > 0); api.metronomeVolume = on ? 1 : 0; $('btnMetro').classList.toggle('on', on); };
   $('btnCountIn').onclick = () => { const on = !(api.countInVolume > 0); api.countInVolume = on ? 1 : 0; $('btnCountIn').classList.toggle('on', on); };
   $('btnClearSel').onclick = () => { api.playbackRange = null; try { api.clearPlaybackRangeHighlight(); } catch (e) { /* versão sem destaque */ } tbar.setRange(null); toast('Trecho limpo'); };
   $('rngVol').oninput = () => { api.masterVolume = $('rngVol').value / 100; };
   api.masterVolume = 0.8;
+
+  /* ---------------- repetição (início/fim e velocidade progressiva) ---------------- */
+  function setSpeed(pct) {
+    pct = Math.max(10, Math.min(300, Math.round(pct)));
+    api.playbackSpeed = pct / 100;
+    const sel = $('selSpeed'), val = String(pct / 100);
+    if (![...sel.options].some(o => o.value === val)) {
+      sel.querySelectorAll('option[data-custom]').forEach(o => o.remove());
+      const o = document.createElement('option'); o.value = val; o.textContent = pct + '%'; o.dataset.custom = '1';
+      const after = [...sel.options].find(x => +x.value > pct / 100); sel.insertBefore(o, after || null);
+    }
+    sel.value = val;
+  }
+  function setLoopPick(which) {
+    S.loopPick = which;
+    $('lpStart').classList.toggle('picking', which === 'start');
+    $('lpEnd').classList.toggle('picking', which === 'end');
+    $('lpHint').textContent = which ? 'Agora toque no compasso de ' + (which === 'start' ? 'início' : 'fim') + ' na partitura (ou digite).' : 'Toque num campo e depois no compasso da partitura.';
+  }
+  function loopBars() {
+    const n = S.score ? S.score.masterBars.length : 1;
+    let a = Math.round(+$('lpStart').value || 1), b = Math.round(+$('lpEnd').value || a);
+    a = Math.max(1, Math.min(n, a)); b = Math.max(1, Math.min(n, b));
+    if (b < a) [a, b] = [b, a];
+    $('lpStart').value = a; $('lpEnd').value = b;
+    return [a - 1, b - 1];
+  }
+  function previewLoop() { if (S.score) tbar.setRange(loopBars()); }
+  function openLoopPanel() {
+    if (!S.score) { toast('Abra uma música primeiro'); return; }
+    const p = $('loopPanel'); p.hidden = false;
+    // fica logo acima da barra de trilhas e do player, qualquer que seja a altura deles
+    p.style.bottom = ($('player').offsetHeight + $('trackBar').offsetHeight + 8) + 'px';
+    const n = S.score.masterBars.length;
+    if (tbar.range) { $('lpStart').value = tbar.range[0] + 1; $('lpEnd').value = tbar.range[1] + 1; }
+    else { const a = (S.edit ? S.cur.bar : tbar.cur) + 1; $('lpStart').value = a; $('lpEnd').value = Math.min(n, a + 3); }
+    $('lpStart').max = n; $('lpEnd').max = n;
+    $('lpProgRow').classList.toggle('off', !$('lpProg').checked);
+    setLoopPick('start');
+    updateLoopStatus();
+  }
+  function updateLoopStatus() {
+    const P = S.loopProg;
+    $('lpStatus').textContent = api.isLooping ? (P ? 'Volta ' + (P.cycle + 1) + ' · ' + Math.round(api.playbackSpeed * 100) + '%' : 'Repetindo') : '';
+    $('btnLoop').classList.toggle('on', !!api.isLooping);
+  }
+  function applyLoop() {
+    const [a, b] = loopBars();
+    setRangeBars(a, b);
+    api.isLooping = true;
+    if ($('lpProg').checked) {
+      const from = Math.max(10, Math.min(300, +$('lpFrom').value || 50)), to = Math.max(10, Math.min(300, +$('lpTo').value || 100)), step = Math.max(1, Math.min(100, +$('lpStep').value || 5));
+      $('lpFrom').value = from; $('lpTo').value = to; $('lpStep').value = step;
+      if (S.speedBeforeLoop == null) S.speedBeforeLoop = api.playbackSpeed;
+      S.loopProg = { from, to, step, cycle: 0 };
+      setSpeed(from);
+    } else S.loopProg = null;
+    setLoopPick(null); updateLoopStatus();
+    if (!S.playing && S.playerReady) { Wake.request(); api.play(); }
+    toast('Repetindo compassos ' + (a + 1) + ' a ' + (b + 1) + (S.loopProg ? ' — de ' + S.loopProg.from + '% até ' + S.loopProg.to + '%, +' + S.loopProg.step + '% por volta' : ''), 'ok', 4000);
+  }
+  function loopOff() {
+    api.isLooping = false; S.loopProg = null;
+    api.playbackRange = null; try { api.clearPlaybackRangeHighlight(); } catch (e) { /* nada */ }
+    tbar.setRange(null);
+    if (S.speedBeforeLoop != null) { setSpeed(S.speedBeforeLoop * 100); S.speedBeforeLoop = null; }
+    setLoopPick(null); updateLoopStatus();
+    toast('Repetição desligada');
+  }
+  /* cada vez que a música volta ao início do trecho, conta uma volta e acelera */
+  function loopCycleCheck(tick) {
+    const P = S.loopProg, R = api.playbackRange;
+    if (!P || !api.isLooping || !S.playing || !R) return;
+    if (tick < S.lastTick - 480 && Math.abs(tick - R.startTick) < TICKS_PER_QUARTER * 4) {
+      P.cycle++;
+      const dir = P.to >= P.from ? 1 : -1;
+      const v = P.from + dir * P.step * P.cycle;
+      setSpeed(dir > 0 ? Math.min(P.to, v) : Math.max(P.to, v));
+      updateLoopStatus();
+    }
+  }
+  $('btnLoop').onclick = () => { const p = $('loopPanel'); if (p.hidden) openLoopPanel(); else { p.hidden = true; setLoopPick(null); tbar.setRange(rangeBars(api.playbackRange)); } };
+  $('lpClose').onclick = () => { $('loopPanel').hidden = true; setLoopPick(null); tbar.setRange(rangeBars(api.playbackRange)); };
+  $('lpApply').onclick = applyLoop;
+  $('lpOff').onclick = loopOff;
+  ['lpStart', 'lpEnd'].forEach(id => {
+    $(id).addEventListener('focus', () => setLoopPick(id === 'lpStart' ? 'start' : 'end'));
+    $(id).addEventListener('click', () => setLoopPick(id === 'lpStart' ? 'start' : 'end'));
+    $(id).addEventListener('change', previewLoop);
+  });
+  $('lpProg').onchange = () => $('lpProgRow').classList.toggle('off', !$('lpProg').checked);
 
   /* ---------------- trilhas / mixer ---------------- */
   function mixOf(i) { return S.mix[i] || (S.mix[i] = { mute: false, solo: false, vol: 1 }); }
@@ -643,7 +749,7 @@
     if (!isStringed(track)) return false;
     const p = prefs.stave;
     if (p === 'Score') return false;
-    if (p === 'Default') return track.staves[0].showTablature !== false;
+
     return true;
   }
   function drawCursor() {
@@ -833,6 +939,14 @@
         .catch(e => toast('Atenção: não foi possível gravar o rascunho automático (' + e.message + '). Salve o arquivo para não perder o trabalho.', 'err', 8000));
     }, 1200);
   }
+  // ao sair/trocar de app, grava o rascunho na hora (sem esperar o intervalo)
+  function flushDraft() {
+    if (!S.score || !S.dirty) return;
+    clearTimeout(draftT);
+    try { Store.set('draft', { json: Ops.snapshot(S.score), name: S.fileName, time: Date.now(), v: APP_VERSION }).catch(() => { /* aviso já é dado no salvamento normal */ }); } catch (e) { /* sem IndexedDB */ }
+  }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushDraft(); });
+  window.addEventListener('pagehide', flushDraft);
   function clearDraft() { Store.del('draft').catch(() => { /* sem rascunho */ }); }
   function checkDraft() {
     Store.get('draft').then(d => {
@@ -979,17 +1093,20 @@
     const hideAll = () => { Object.values(VIZ_MODS).forEach(M => { $(M.canvas).hidden = true; }); Object.values(S.viz).forEach(v => v.setVisible(false)); };
     if (!modes.length) {
       hideAll(); S.fb = null; S.vizMode = null; S.threeTrack = -1;
-      fillSelect($('selVizMode'), [['', 'Percussão', true]], '');
-      $('selVizView').innerHTML = ''; $('selVizView').hidden = true;
+      fillSelect($('selVizKind'), [['', 'Percussão', true]], '');
+      $('selVizView').innerHTML = ''; $('selVizView').hidden = true; $('selVizDim').hidden = true;
       $('p3dMsg').textContent = 'Bateria e percussão ainda não têm instrumento na tela.';
       return;
     }
-    $('selVizView').hidden = false;
+    $('selVizView').hidden = false; $('selVizDim').hidden = false;
     const stringedTrack = !t || neckable(t);
     let mode = stringedTrack ? prefs.vizNeck : prefs.vizOther;
     if (!modes.includes(mode)) mode = modes[0];
     S.vizMode = mode; S.threeTrack = t ? S.primary : -1;
-    fillSelect($('selVizMode'), modes.map(m => [m, VIZ_MODS[m].label]), mode);
+    // três listas: cordas/teclas · 3D/2D · visão
+    const kinds = modes.some(m => m.startsWith('neck')) ? [['neck', 'Cordas'], ['keys', 'Teclas']] : [['keys', 'Teclas']];
+    fillSelect($('selVizKind'), kinds, mode.slice(0, 4));
+    $('selVizDim').value = mode.slice(4);
     const M = VIZ_MODS[mode];
     const view = M.views.some(v => v[0] === prefs.vizViews[mode]) ? prefs.vizViews[mode] : M.views[0][0];
     const viewItems = M.views.slice();
@@ -1011,12 +1128,14 @@
     if (inst._view !== view) { inst._view = view; inst.setCamera(view); }
     show3dIdle();
   }
-  $('selVizMode').onchange = () => {
-    const v = $('selVizMode').value; if (!VIZ_MODS[v]) return;
+  function setVizMode(v) {
+    if (!VIZ_MODS[v]) return;
     const t = S.score && S.score.tracks[S.primary];
     if (!t || neckable(t)) prefs.vizNeck = v; else prefs.vizOther = v;
     savePrefs(); sync3d();
-  };
+  }
+  $('selVizKind').onchange = () => setVizMode($('selVizKind').value + $('selVizDim').value);
+  $('selVizDim').onchange = () => setVizMode($('selVizKind').value + $('selVizDim').value);
   $('selVizView').onchange = () => {
     const v = $('selVizView').value, mode = S.vizMode; if (!mode) return;
     if (v === '__flip') { prefs.flip = !prefs.flip; savePrefs(); Object.values(S.viz).forEach(i => { i._tsKey = null; }); sync3d(); return; }
@@ -1048,11 +1167,14 @@
   document.querySelector('[data-close3d]').onclick = () => toggle3d(false);
 
   /* ---------------- visualização ---------------- */
+  prefs.stave = staveOf(prefs.stave);
   $('selStave').value = prefs.stave; $('selLayout').value = prefs.layout; $('rngZoom').value = prefs.zoom; $('zoomVal').textContent = prefs.zoom + '%';
   $('chkFollow').checked = prefs.follow;
   viewport.classList.toggle('horizontal', prefs.layout === 'Horizontal');
   function applyDisplay() {
-    api.settings.display.staveProfile = at.StaveProfile[prefs.stave];
+    prefs.stave = staveOf(prefs.stave);
+    api.settings.display.staveProfile = at.StaveProfile[STAVES[prefs.stave][0]];
+    api.settings.notation.rhythmMode = at.TabRhythmMode[STAVES[prefs.stave][1]];
     api.settings.display.layoutMode = at.LayoutMode[prefs.layout];
     api.settings.display.scale = prefs.zoom / 100;
     api.settings.player.scrollMode = prefs.follow ? at.ScrollMode.Continuous : at.ScrollMode.Off;
@@ -1115,6 +1237,6 @@
   // ganchos para testes automatizados
   window.TabStudio = {
     version: APP_VERSION, api, Ops, state: S,
-    loadBytes, setScore, selectTrack, seekToBar, setRangeBars, tbar, Wake: window.TabWake, zipStore, exportMidi, buildDemo, openDemo, toggleEdit, toggle3d, edAction, edSetFret, saveGp, undo, redo, commit, drawCursor
+    loadBytes, setScore, selectTrack, setVizMode, openLoopPanel, applyLoop, loopOff, setSpeed, seekToBar, setRangeBars, tbar, Wake: window.TabWake, zipStore, exportMidi, buildDemo, openDemo, toggleEdit, toggle3d, edAction, edSetFret, saveGp, undo, redo, commit, drawCursor
   };
 })();
