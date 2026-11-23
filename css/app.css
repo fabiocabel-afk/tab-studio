@@ -38,6 +38,8 @@ button, select, input { font: inherit; color: inherit; }
   padding: 6px 10px; border-radius: 8px; cursor: pointer; font-size: 14px;
 }
 .tb i { font-style: normal; font-size: 16px; }
+.tb i svg { display: block; }
+#btnTrkUp, #btnTrkDown { color: var(--tx); }
 .tb:hover { background: var(--bg3); }
 .tb.on { background: var(--ac); color: #1b1305; }
 .tb:disabled { opacity: .4; cursor: default; }

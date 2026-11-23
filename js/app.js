@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '1.10.0';
+  const APP_VERSION = '1.11.0';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Store = window.TabStore;
@@ -482,6 +482,16 @@
   $('btnPrevSys').onclick = () => jumpSystem(-1);
   $('btnNextSys').onclick = () => jumpSystem(1);
   $('btnHome').onclick = () => { if (S.score) seekToBar(0); };
+  /* ▲ ▼ no topo: troca de instrumento (trilha) sem abrir a lista; do último volta ao primeiro e vice-versa */
+  function stepTrack(d) {
+    if (!S.score) return;
+    const n = S.score.tracks.length; if (n < 2) return;
+    const i = ((S.primary + d) % n + n) % n;
+    selectTrack(i);
+    toast(S.score.tracks[i].name.trim() || 'Trilha ' + (i + 1));
+  }
+  $('btnTrkUp').onclick = () => stepTrack(-1);
+  $('btnTrkDown').onclick = () => stepTrack(1);
   $('rngSeek').addEventListener('input', () => { S.seeking = true; });
   $('rngSeek').addEventListener('change', () => {
     S.seeking = false;
