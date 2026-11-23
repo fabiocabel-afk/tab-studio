@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '1.6.1';
+  const APP_VERSION = '1.7.0';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Store = window.TabStore;
@@ -244,12 +244,70 @@
     toast('Aberto: ' + name + ' — ' + score.tracks.length + ' trilha(s), ' + score.masterBars.length + ' compassos', 'ok');
     return true;
   }
+  /* ---------------- arquivos recentes (até 20, guardados no aparelho) ---------------- */
+  // o navegador não deixa guardar o caminho do arquivo; como os arquivos são pequenos, guardamos o conteúdo
+  const RECENT_MAX = 20, RECENT_MAX_BYTES = 20 * 1024 * 1024;
+  function hashBytes(b) { let h = 0x811c9dc5; for (let i = 0; i < b.length; i++) { h ^= b[i]; h = Math.imul(h, 0x01000193); } return (h >>> 0).toString(36) + '-' + b.length; }
+  async function getRecent() { try { return (await Store.get('recent')) || []; } catch (e) { return []; } }
+  async function addRecent(bytes, name) {
+    try {
+      if (!bytes || bytes.length > RECENT_MAX_BYTES) return;
+      const id = hashBytes(bytes);
+      const sc = S.score || {};
+      const meta = { id, name, title: sc.title || '', artist: sc.artist || '', size: bytes.length, time: Date.now() };
+      const list = await getRecent();
+      const keep = [meta].concat(list.filter(x => x.id !== id && x.name !== name));
+      const drop = keep.slice(RECENT_MAX).concat(list.filter(x => x.id !== id && x.name === name));
+      await Store.set('file:' + id, bytes);
+      await Store.set('recent', keep.slice(0, RECENT_MAX));
+      for (const d of drop) if (d.id !== id) await Store.del('file:' + d.id);
+      updateRecentButton();
+    } catch (e) { /* sem espaço no aparelho: a lista só não é atualizada */ }
+  }
+  async function openRecent(id) {
+    const list = await getRecent(); const meta = list.find(x => x.id === id); if (!meta) return;
+    if (S.dirty && !(await confirmDlg('Alterações não salvas', 'A música atual tem alterações que ainda não foram salvas. Abrir outro arquivo vai descartá-las.', 'Descartar e abrir'))) return;
+    let bytes = null; try { bytes = await Store.get('file:' + id); } catch (e) { bytes = null; }
+    if (!bytes) { toast('Esse arquivo não está mais guardado no aparelho — abra pelo "Abrir arquivo"', 'err'); await removeRecent(id); return; }
+    if (loadBytes(bytes, meta.name)) { clearDraft(); addRecent(bytes, meta.name); }
+  }
+  async function removeRecent(id) {
+    const list = await getRecent();
+    await Store.set('recent', list.filter(x => x.id !== id)); await Store.del('file:' + id);
+    updateRecentButton();
+  }
+  async function updateRecentButton() { const n = (await getRecent()).length; $('wRecent').textContent = '🕘 Recentes' + (n ? ' (' + n + ')' : ''); }
+  function fmtSize(n) { return n < 1024 ? n + ' B' : (n / 1024).toFixed(n < 10240 ? 1 : 0).replace('.', ',') + ' KB'; }
+  async function recentDialog() {
+    const d = $('dlgRecent'), box = $('recentList');
+    const draw = async () => {
+      const list = await getRecent();
+      box.innerHTML = list.length ? '' : '<p class="muted">Nenhum arquivo aberto ainda. Os últimos 20 arquivos que você abrir ou salvar aparecem aqui, mesmo sem internet.</p>';
+      $('recentClear').hidden = !list.length;
+      list.forEach(m => {
+        const row = document.createElement('div'); row.className = 'rec';
+        const sub = [m.title && m.title !== m.name.replace(/\.[^.]+$/, '') ? m.title : '', m.artist].filter(Boolean).join(' — ');
+        row.innerHTML = '<button class="rec-open"><b>' + esc(m.name) + '</b><span>' + (sub ? esc(sub) + ' · ' : '') + fmtSize(m.size) + ' · ' + new Date(m.time).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) + '</span></button><button class="x" title="Tirar da lista">✕</button>';
+        row.querySelector('.rec-open').onclick = () => { d.close(); openRecent(m.id); };
+        row.querySelector('.x').onclick = async () => { await removeRecent(m.id); draw(); };
+        box.appendChild(row);
+      });
+    };
+    $('recentClear').onclick = async () => {
+      if (!(await confirmDlg('Limpar recentes', 'Tirar todos os arquivos da lista de recentes? Os arquivos originais no seu aparelho não são apagados.', 'Limpar'))) return;
+      const list = await getRecent(); for (const m of list) await Store.del('file:' + m.id);
+      await Store.set('recent', []); updateRecentButton(); draw();
+    };
+    await draw();
+    d.showModal();
+  }
   async function openFile(file, extra) {
     if (!file) return;
     if (S.dirty && !(await confirmDlg('Alterações não salvas', 'A música atual tem alterações que ainda não foram salvas. Abrir outro arquivo vai descartá-las (o rascunho automático também será substituído).', 'Descartar e abrir'))) return;
     try {
       const buf = await file.arrayBuffer();
-      if (loadBytes(new Uint8Array(buf), file.name, extra)) clearDraft();
+      const bytes = new Uint8Array(buf);
+      if (loadBytes(bytes, file.name, extra)) { clearDraft(); addRecent(bytes, file.name); }
     } catch (e) { showMsg('Erro ao ler arquivo', esc(e.message)); }
   }
 
@@ -326,8 +384,8 @@
   });
   /* prévia: notas que ainda vão tocar até o fim do compasso atual + N compassos */
   function previewNotes(beats) {
-    const P = prefs.preview; if (P == null || P === 'off') return [];
-    const extra = +P, out = [];
+    const P = +prefs.preview || 0; if (P <= 0) return [];
+    const extra = P - 1, out = [];
     for (const b of beats) {
       const lastBar = b.voice.bar.index + extra;
       let x = b.nextBeat, guard = 0;
@@ -878,6 +936,7 @@
       how = r; if (r === 'zip') shownName = name + '.zip';
     }
     S.dirty = false; updateTitle(); clearDraft();
+    addRecent(data, shownName.replace(/\.zip$/i, ''));
     toast((how === 'file' ? 'Salvo' : 'Baixado') + ' e verificado: ' + shownName + ' (' + n2 + ' notas, ' + check.masterBars.length + ' compassos)' + (how === 'zip' ? ' — o .gp está dentro do .zip' : ''), 'ok', 5000);
   }
   /* Entrega um arquivo ao usuário. Fora do link de visualização: download normal.
@@ -1059,10 +1118,10 @@
 
   /* ---------------- instrumento na tela (braço/teclado, 2D/3D) ---------------- */
   const VIZ_MODS = {
-    neck3d: { file: './fretboard3d.js', cls: 'Fretboard3D', canvas: 'canvas3d', label: 'Braço 3D', views: [['player', 'Visão do músico'], ['top', 'Topo'], ['full', 'Braço inteiro']] },
-    neck2d: { file: './fretboard2d.js', cls: 'Fretboard2D', canvas: 'canvasN2d', label: 'Braço 2D', views: [['focus7', 'Foco 7 casas'], ['focus10', 'Foco 10 casas'], ['full', 'Braço inteiro']] },
-    keys3d: { file: './keyboard3d.js', cls: 'Keyboard3D', canvas: 'canvasK3d', label: 'Teclado 3D', views: [['player', 'Visão do músico'], ['top', 'Topo'], ['full', 'Teclado inteiro']] },
-    keys2d: { file: './keyboard2d.js', cls: 'Keyboard2D', canvas: 'canvasK2d', label: 'Teclado 2D', views: [['range', 'Faixa tocada'], ['hands', 'Duas mãos'], ['full', 'Teclado inteiro']] }
+    neck3d: { file: './fretboard3d.js', cls: 'Fretboard3D', canvas: 'canvas3d', label: 'Braço 3D', views: [['player', 'Visão do músico', 'Músico'], ['top', 'Topo', 'Topo'], ['full', 'Braço inteiro', 'Inteiro']] },
+    neck2d: { file: './fretboard2d.js', cls: 'Fretboard2D', canvas: 'canvasN2d', label: 'Braço 2D', views: [['focus7', 'Foco 7 casas', '7 casas'], ['focus10', 'Foco 10 casas', '10 casas'], ['full', 'Braço inteiro', 'Inteiro']] },
+    keys3d: { file: './keyboard3d.js', cls: 'Keyboard3D', canvas: 'canvasK3d', label: 'Teclado 3D', views: [['player', 'Visão do músico', 'Músico'], ['top', 'Topo', 'Topo'], ['full', 'Teclado inteiro', 'Inteiro']] },
+    keys2d: { file: './keyboard2d.js', cls: 'Keyboard2D', canvas: 'canvasK2d', label: 'Teclado 2D', views: [['range', 'Faixa tocada', 'Faixa'], ['hands', 'Duas mãos', '2 mãos'], ['full', 'Teclado inteiro', 'Inteiro']] }
   };
   S.viz = {}; S.vizLoading = {}; S.vizMode = null;
   prefs.vizViews = Object.assign({ neck3d: 'player', neck2d: 'focus7', keys3d: 'player', keys2d: 'range' }, prefs.vizViews || {});
@@ -1095,8 +1154,25 @@
   }
   function fillSelect(sel, items, value) {
     sel.innerHTML = '';
-    items.forEach(([v, label, dis]) => { const o = document.createElement('option'); o.value = v; o.textContent = label; if (dis) o.disabled = true; sel.appendChild(o); });
+    items.forEach(([v, label, dis, short, tiny]) => {
+      const o = document.createElement('option'); o.value = v; o.textContent = label; if (dis) o.disabled = true;
+      o.dataset.full = label; if (short) o.dataset.short = short; if (tiny) o.dataset.tiny = tiny;
+      sel.appendChild(o);
+    });
     sel.value = value;
+    if (sel._compact) sel._compact();
+  }
+  /* listas compactas: fechadas mostram a abreviação (cabem numa linha); abertas mostram o nome completo */
+  function compactSelect(sel) {
+    const narrow = () => window.innerWidth < 560;
+    const full = o => (o.dataset.full != null ? o.dataset.full : (o.dataset.full = o.textContent));
+    sel._compact = () => { [...sel.options].forEach(o => { full(o); o.textContent = (narrow() && o.dataset.tiny) || o.dataset.short || o.dataset.full; }); };
+    sel._expand = () => { [...sel.options].forEach(o => { o.textContent = full(o); }); };
+    ['pointerdown', 'focus', 'keydown'].forEach(ev => sel.addEventListener(ev, sel._expand));
+    sel.addEventListener('change', () => setTimeout(sel._compact, 0));
+    sel.addEventListener('blur', sel._compact);
+    window.addEventListener('resize', () => { if (document.activeElement !== sel) sel._compact(); });
+    sel._compact();
   }
   /* o instrumento na tela mostra sempre a trilha principal selecionada */
   function sync3d() { syncViz().catch(e => { $('p3dMsg').textContent = 'Não foi possível mostrar o instrumento neste aparelho: ' + e.message; }); }
@@ -1118,13 +1194,13 @@
     if (!modes.includes(mode)) mode = modes[0];
     S.vizMode = mode; S.threeTrack = t ? S.primary : -1;
     // três listas: cordas/teclas · 3D/2D · visão
-    const kinds = modes.some(m => m.startsWith('neck')) ? [['neck', 'Cordas'], ['keys', 'Teclas']] : [['keys', 'Teclas']];
+    const kinds = modes.some(m => m.startsWith('neck')) ? [['neck', 'Cordas', false, 'Cordas', 'Cordas'], ['keys', 'Teclas', false, 'Teclas', 'Teclas']] : [['keys', 'Teclas']];
     fillSelect($('selVizKind'), kinds, mode.slice(0, 4));
     $('selVizDim').value = mode.slice(4);
     const M = VIZ_MODS[mode];
     const view = M.views.some(v => v[0] === prefs.vizViews[mode]) ? prefs.vizViews[mode] : M.views[0][0];
-    const viewItems = M.views.slice();
-    if (mode.startsWith('neck')) { viewItems.push(['', '──────────', true]); viewItems.push(['__flip', (prefs.flip ? '✓ ' : '') + 'Cordas invertidas']); }
+    const viewItems = M.views.map(v => [v[0], v[1], false, v[2]]);
+    if (mode.startsWith('neck')) { viewItems.push(['', '──────────', true, '─']); viewItems.push(['__flip', (prefs.flip ? '✓ ' : '') + 'Cordas invertidas', false, (prefs.flip ? '✓ ' : '') + 'Invertidas']); }
     fillSelect($('selVizView'), viewItems, view);
     Object.entries(VIZ_MODS).forEach(([k, X]) => { $(X.canvas).hidden = k !== mode; if (k !== mode && S.viz[k]) S.viz[k].setVisible(false); });
     $('p3dMsg').textContent = S.viz[mode] ? '' : 'Carregando…';
@@ -1156,9 +1232,13 @@
     prefs.vizViews[mode] = v; savePrefs();
     const inst = S.viz[mode]; if (inst) { inst._view = v; inst.setCamera(v); show3dIdle(); }
   };
-  if (prefs.preview == null) prefs.preview = 'off';
+  // 0 = só a nota atual; 1 = compasso atual; 2 = atual + próximo; 3 e 4 = 2 e 3 compassos à frente
+  if (prefs.preview == null || prefs.preview === 'off') prefs.preview = '0';
+  else if (!prefs.previewV2) prefs.preview = String(Math.min(4, (+prefs.preview || 0) + 1));
+  if (!prefs.previewV2) { prefs.previewV2 = true; savePrefs(); }
   $('selVizPrev').value = String(prefs.preview);
-  $('selVizPrev').onchange = () => { prefs.preview = $('selVizPrev').value; savePrefs(); if (S.fb && prefs.preview === 'off' && S.fb.setPreview) S.fb.setPreview([]); };
+  [$('selVizKind'), $('selVizDim'), $('selVizView'), $('selVizPrev')].forEach(compactSelect);
+  $('selVizPrev').onchange = () => { prefs.preview = $('selVizPrev').value; savePrefs(); if (S.fb && prefs.preview === '0' && S.fb.setPreview) S.fb.setPreview([]); };
   function toggle3d(force) {
     const p = $('panel3d');
     const on = force === undefined ? p.hidden : force;
@@ -1212,6 +1292,8 @@
   $('fileInput').onchange = () => { const f = $('fileInput').files[0]; $('fileInput').value = ''; openFile(f); };
   $('wNew').onclick = newSongDialog;
   $('wDemo').onclick = openDemo;
+  $('wRecent').onclick = recentDialog;
+  updateRecentButton();
   $('btnEdit').onclick = () => toggleEdit();
   $('btn3d').onclick = () => toggle3d();
   $('btnTracks').onclick = () => { const p = $('tracksPanel'); p.hidden = !p.hidden; $('btnTracks').classList.toggle('on', !p.hidden); };
@@ -1225,7 +1307,7 @@
     const b = e.target.closest('[data-act]'); if (!b) return;
     const act = b.dataset.act;
     closePopups();
-    ({ open: () => $('fileInput').click(), new: newSongDialog, save: () => saveGp(false), saveAs: () => saveGp(true), midi: exportMidi, print: printScore, demo: openDemo, info: infoDialog, shortcuts: shortcutsDialog, about: aboutDialog })[act]();
+    ({ open: () => $('fileInput').click(), recent: recentDialog, new: newSongDialog, save: () => saveGp(false), saveAs: () => saveGp(true), midi: exportMidi, print: printScore, demo: openDemo, info: infoDialog, shortcuts: shortcutsDialog, about: aboutDialog })[act]();
   };
 
   /* arrastar e soltar */
@@ -1254,6 +1336,6 @@
   // ganchos para testes automatizados
   window.TabStudio = {
     version: APP_VERSION, api, Ops, state: S,
-    loadBytes, setScore, selectTrack, setVizMode, openLoopPanel, applyLoop, loopOff, setSpeed, seekToBar, setRangeBars, tbar, Wake: window.TabWake, zipStore, exportMidi, buildDemo, openDemo, toggleEdit, toggle3d, edAction, edSetFret, saveGp, undo, redo, commit, drawCursor
+    loadBytes, setScore, getRecent, openRecent, recentDialog, selectTrack, setVizMode, openLoopPanel, applyLoop, loopOff, setSpeed, seekToBar, setRangeBars, tbar, Wake: window.TabWake, zipStore, exportMidi, buildDemo, openDemo, toggleEdit, toggle3d, edAction, edSetFret, saveGp, undo, redo, commit, drawCursor
   };
 })();

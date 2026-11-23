@@ -37,6 +37,7 @@
   <!-- Menu "Mais" -->
   <div class="menu" id="menuMore" hidden>
     <button data-act="open">📂 Abrir arquivo… <kbd>Ctrl+O</kbd></button>
+    <button data-act="recent">🕘 Arquivos recentes</button>
     <button data-act="new">✚ Nova música</button>
     <button data-act="save">💾 Salvar <kbd>Ctrl+S</kbd></button>
     <hr>
@@ -91,6 +92,7 @@
           <div class="welcome-actions">
             <button class="btn big primary" id="wOpen">📂 Abrir arquivo</button>
             <button class="btn big" id="wNew">✚ Nova música</button>
+            <button class="btn big" id="wRecent">🕘 Recentes</button>
             <button class="btn big" id="wDemo">🎵 Exemplo</button>
           </div>
           <div id="draftBox" hidden></div>
@@ -104,14 +106,14 @@
       <section id="panel3d" hidden>
         <div class="p3d-bar">
           <select id="selVizKind" title="Mostrar como cordas (braço) ou teclas (teclado)"></select>
-          <select id="selVizDim" title="2D ou 3D"><option value="3d">3D</option><option value="2d">2D</option></select>
+          <select id="selVizDim" title="2D ou 3D"><option value="3d" data-short="3D">3D</option><option value="2d" data-short="2D">2D</option></select>
           <select id="selVizView" title="Visão"></select>
-          <select id="selVizPrev" title="Mostrar antes onde as próximas notas vão cair">
-            <option value="off">Só a nota atual</option>
-            <option value="0">Prévia: compasso atual</option>
-            <option value="1">Prévia: próximo compasso</option>
-            <option value="2">Prévia: 2 compassos à frente</option>
-            <option value="3">Prévia: 3 compassos à frente</option>
+          <select id="selVizPrev" title="Prévia: mostrar antes onde as próximas notas vão cair">
+            <option value="0" data-short="Prévia 0" data-tiny="P0">0 · Só a nota atual</option>
+            <option value="1" data-short="Prévia 1" data-tiny="P1">1 · Prévia: compasso atual</option>
+            <option value="2" data-short="Prévia 2" data-tiny="P2">2 · Prévia: compasso atual + próximo</option>
+            <option value="3" data-short="Prévia 3" data-tiny="P3">3 · Prévia: 2 compassos à frente</option>
+            <option value="4" data-short="Prévia 4" data-tiny="P4">4 · Prévia: 3 compassos à frente</option>
           </select>
           <span class="p3d-msg" id="p3dMsg"></span>
           <button class="x" data-close3d title="Fechar">✕</button>
@@ -290,6 +292,13 @@
       <label>Letra / música de <input id="iMusic"></label>
       <label>Transcrição <input id="iTab"></label>
       <menu><button value="cancel" class="btn">Cancelar</button><button value="ok" class="btn primary">Aplicar</button></menu>
+    </form>
+  </dialog>
+  <dialog id="dlgRecent">
+    <form method="dialog">
+      <h3>🕘 Arquivos recentes</h3>
+      <div id="recentList"></div>
+      <menu><button type="button" class="btn danger" id="recentClear">Limpar lista</button><button value="ok" class="btn primary">Fechar</button></menu>
     </form>
   </dialog>
   <dialog id="dlgMsg">

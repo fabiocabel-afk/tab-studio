@@ -280,3 +280,20 @@ dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; ma
 @media (max-width: 900px) {
   #topbar .tb.burger { order: 2; }
 }
+
+/* painel do instrumento: tudo numa linha só */
+.p3d-bar { flex-wrap: nowrap; gap: 6px; overflow: hidden; }
+.p3d-bar select { flex: 0 1 auto; min-width: 0; max-width: 34vw; padding: 4px 6px; text-overflow: ellipsis; }
+.p3d-bar #p3dMsg { flex: 1 1 0; min-width: 0; overflow: hidden; }
+@media (max-width: 559px) { .p3d-bar { gap: 4px; padding: 6px 6px; } .p3d-bar select { padding: 4px 3px; } }
+.p3d-msg { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.p3d-bar .x { margin-left: auto; flex: none; }
+
+/* ---------- arquivos recentes ---------- */
+#recentList { display: flex; flex-direction: column; gap: 4px; max-height: 60vh; overflow: auto; min-width: min(480px, 80vw); }
+.rec { display: flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg3); }
+.rec:hover { border-color: var(--ac); }
+.rec-open { flex: 1; text-align: left; background: none; border: 0; padding: 8px 10px; cursor: pointer; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rec-open b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rec-open span { font-size: 12px; color: var(--tx2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rec .x { padding: 8px 10px; }
