@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '1.4.0';
+  const APP_VERSION = '1.5.0';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Store = window.TabStore;
@@ -322,8 +322,22 @@
       for (const n of b.notes) notes.push(noteFor3d(n));
       upcomingNotes(b, look, up);
     }
-    S.fb.play(notes, dur, up);
+    S.fb.play(notes, dur, up, previewNotes(beats));
   });
+  /* prévia: notas que ainda vão tocar até o fim do compasso atual + N compassos */
+  function previewNotes(beats) {
+    const P = prefs.preview; if (P == null || P === 'off') return [];
+    const extra = +P, out = [];
+    for (const b of beats) {
+      const lastBar = b.voice.bar.index + extra;
+      let x = b.nextBeat, guard = 0;
+      while (x && x.voice.bar.index <= lastBar && guard++ < 600) {
+        for (const n of x.notes) if (!n.isTieDestination) out.push(noteFor3d(n));
+        x = x.nextBeat;
+      }
+    }
+    return out;
+  }
   /* próximas notas (para o 2D e o teclado se posicionarem antes) */
   function upcomingNotes(beat, ms, out) {
     let b = beat.nextBeat, acc = 0, guard = 0;
@@ -1094,11 +1108,11 @@
     if (!modes.length) {
       hideAll(); S.fb = null; S.vizMode = null; S.threeTrack = -1;
       fillSelect($('selVizKind'), [['', 'Percussão', true]], '');
-      $('selVizView').innerHTML = ''; $('selVizView').hidden = true; $('selVizDim').hidden = true;
+      $('selVizView').innerHTML = ''; $('selVizView').hidden = true; $('selVizDim').hidden = true; $('selVizPrev').hidden = true;
       $('p3dMsg').textContent = 'Bateria e percussão ainda não têm instrumento na tela.';
       return;
     }
-    $('selVizView').hidden = false; $('selVizDim').hidden = false;
+    $('selVizView').hidden = false; $('selVizDim').hidden = false; $('selVizPrev').hidden = false;
     const stringedTrack = !t || neckable(t);
     let mode = stringedTrack ? prefs.vizNeck : prefs.vizOther;
     if (!modes.includes(mode)) mode = modes[0];
@@ -1142,6 +1156,9 @@
     prefs.vizViews[mode] = v; savePrefs();
     const inst = S.viz[mode]; if (inst) { inst._view = v; inst.setCamera(v); show3dIdle(); }
   };
+  if (prefs.preview == null) prefs.preview = 'off';
+  $('selVizPrev').value = String(prefs.preview);
+  $('selVizPrev').onchange = () => { prefs.preview = $('selVizPrev').value; savePrefs(); if (S.fb && prefs.preview === 'off' && S.fb.setPreview) S.fb.setPreview([]); };
   function toggle3d(force) {
     const p = $('panel3d');
     const on = force === undefined ? p.hidden : force;

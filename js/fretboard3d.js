@@ -161,6 +161,7 @@ export class Fretboard3D {
     this._mergeStatic();
     this._buildStrings();
     this.hover = this._makeMarker('#ffffff', 0.35); this.hover.visible = false; this.dyn.add(this.hover);
+    this.pv = [];
     this.cursorLine = null;
     this.dirty = true;
   }
@@ -487,7 +488,29 @@ export class Fretboard3D {
   }
 
   /* ---------- reprodução ---------- */
-  play(notes, durMs) {
+  /* prévia: anel vazado, menor, na cor da corda, onde as próximas notas vão cair */
+  setPreview(list) {
+    const seen = new Set(), items = [];
+    for (const n of list || []) {
+      const st = this.strings[n.string]; if (!st || n.dead) continue;
+      const key = n.string + ':' + n.fret; if (seen.has(key)) continue; seen.add(key);
+      if (st.active && st.fret === n.fret) continue;
+      items.push(n);
+    }
+    while (this.pv.length < items.length) {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.075, 8, 28), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.95 }));
+      ring.rotation.x = Math.PI / 2; this.dyn.add(ring); this.pv.push(ring);
+    }
+    this.pv.forEach((ring, i) => {
+      const n = items[i]; ring.visible = !!n; if (!n) return;
+      const x = n.fret > 0 ? fretX(n.fret) - (fretX(n.fret) - fretX(n.fret - 1)) * 0.3 : -1.0;
+      ring.position.set(x, 0.75, this.stringZ(n.string, x));
+      ring.material.color.set(this.strings[n.string].color);
+      ring.userData.n = n;
+    });
+    this.dirty = true;
+  }
+  play(notes, durMs, upcoming, preview) {
     const now = performance.now();
     const hit = new Set();
     for (const n of notes) {
@@ -503,9 +526,11 @@ export class Fretboard3D {
       const st = this.strings[s];
       if (st && st.active && !hit.has(s)) { st.active = false; st.release = now; }
     }
+    this.setPreview(preview);
     this.dirty = true;
   }
   stopAll() {
+    this.setPreview([]);
     const now = performance.now();
     for (let s = 1; s <= this.N; s++) { const st = this.strings[s]; if (st && st.active) { st.active = false; st.release = now; } }
     this.dirty = true;
@@ -579,7 +604,9 @@ export class Fretboard3D {
         st.marker.visible = true;
         const mx = fret > 0 ? fingerX : -1.0;
         st.marker.position.set(mx, 0.75, this.stringZ(s, mx) + (fret > 0 ? dz : 0));
-        st.marker.scale.setScalar(0.75 + 0.45 * level);
+        // cresce ao tocar (a prévia vira a esfera cheia)
+        const grow = st.static ? 1 : Math.min(1, 0.55 + 0.45 * (now - (st.hitT || st.t0)) / 140);
+        st.marker.scale.setScalar((0.75 + 0.45 * level) * grow);
         const txt = n && n.dead ? 'x' : String(fret);
         if (st.labelText !== txt) { st.labelText = txt; this._setLabel(st.label, txt); }
         st.label.visible = true;

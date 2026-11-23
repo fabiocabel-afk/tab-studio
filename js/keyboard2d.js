@@ -40,9 +40,16 @@ export class Keyboard2D {
     else { const t = new HandTracker(); t.c = Object.assign({}, this.hands.c); t.assign(list); }
     return list;
   }
-  play(notes, durMs, upcoming) {
+  /** notas que ainda vão tocar (anel vazado, menor) */
+  setPreview(list) {
+    this.preview = new Map();
+    for (const n of this._prep(list || [], false)) if (!this.preview.has(n.pitch)) this.preview.set(n.pitch, n.hand);
+    this.dirty = true;
+  }
+  play(notes, durMs, upcoming, preview) {
     const now = performance.now();
     const cur = this._prep(notes, true), up = this._prep(upcoming, false);
+    this.setPreview(preview);
     const hit = new Set();
     for (const n of cur) {
       const k = this.keys.get(n.pitch) || {};
@@ -54,7 +61,7 @@ export class Keyboard2D {
     this._plan(cur, up);
     this.dirty = true;
   }
-  stopAll() { const now = performance.now(); for (const k of this.keys.values()) if (k.active) { k.active = false; k.release = now; } this.dirty = true; }
+  stopAll() { const now = performance.now(); for (const k of this.keys.values()) if (k.active) { k.active = false; k.release = now; } this.preview = new Map(); this.dirty = true; }
   showStatic(notes) {
     this.keys.clear();
     const cur = this._prep(notes, false);
@@ -99,11 +106,30 @@ export class Keyboard2D {
     if (k.release) { const d = now - k.release; return d < 220 ? 0.6 * (1 - d / 220) : 0; }
     return 0;
   }
+  /* esfera do dedo: cor forte da mão, nota em branco; cresce ao apertar */
+  _finger(cx, cy, r, color, name, k, now) {
+    const g = this.g;
+    const grow = k && k.t0 && !k.static ? Math.min(1, 0.62 + 0.38 * (now - k.t0) / 130) : 1;
+    const rr = r * grow;
+    g.save(); g.shadowColor = color; g.shadowBlur = 14;
+    const gr = g.createRadialGradient(cx - rr * 0.35, cy - rr * 0.4, rr * 0.1, cx, cy, rr);
+    gr.addColorStop(0, '#ffffff'); gr.addColorStop(0.18, color); gr.addColorStop(1, color);
+    g.fillStyle = gr; g.beginPath(); g.arc(cx, cy, rr, 0, Math.PI * 2); g.fill(); g.restore();
+    g.fillStyle = '#ffffff'; g.font = 'bold ' + Math.max(8, Math.round(rr * (name.length > 2 ? 0.62 : 0.78))) + 'px system-ui, sans-serif';
+    g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(name, cx, cy + 1);
+  }
+  _ring(cx, cy, r, color) {
+    const g = this.g; g.strokeStyle = color; g.lineWidth = Math.max(2, r * 0.18);
+    g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.stroke();
+  }
   _region(x, y, w, h, ws, wc, label) {
     const g = this.g, now = this._now;
     const ww = w / wc;
+    const fingers = [], rings = [];
+    const pv = this.preview || new Map();
     g.save(); g.beginPath(); g.rect(x, y, w, h); g.clip();
     const first = Math.max(0, Math.floor(ws)), last = Math.min(WHITE_COUNT - 1, Math.ceil(ws + wc));
+    const rW = Math.max(7, Math.min(ww * 0.42, 22));
     // teclas brancas
     for (let wi = first; wi <= last; wi++) {
       const m = whiteToMidi(wi); const kx = x + (wi - ws) * ww;
@@ -111,16 +137,15 @@ export class Keyboard2D {
       g.fillStyle = '#f4f1ea'; g.fillRect(kx + 0.5, y, ww - 1, h);
       if (lv > 0) {
         const col = HAND_COLORS[k.hand || 'X'];
-        const gr = g.createLinearGradient(0, y, 0, y + h); gr.addColorStop(0, col); gr.addColorStop(1, '#fff2d8');
-        g.globalAlpha = Math.min(1, lv + 0.1); g.fillStyle = gr; g.fillRect(kx + 0.5, y, ww - 1, h); g.globalAlpha = 1;
-      }
+        g.globalAlpha = Math.min(0.45, lv * 0.5); g.fillStyle = col; g.fillRect(kx + 0.5, y, ww - 1, h); g.globalAlpha = 1;
+        fingers.push([kx + ww / 2, y + h * 0.74, rW, col, noteName(m), k]);
+      } else if (pv.has(m)) rings.push([kx + ww / 2, y + h * 0.74, rW * 0.62, HAND_COLORS[pv.get(m) || 'X']]);
       g.fillStyle = 'rgba(0,0,0,.18)'; g.fillRect(kx + ww - 1, y, 1, h);
-      const fs = Math.max(9, Math.min(13, ww * 0.42));
-      if (m % 12 === 0) { g.fillStyle = lv > 0 ? '#1a1320' : '#8a8494'; g.font = 'bold ' + fs + 'px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'alphabetic'; g.fillText(noteName(m), kx + ww / 2, y + h - 6); }
-      else if (lv > 0) { g.fillStyle = '#1a1320'; g.font = 'bold ' + fs + 'px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'alphabetic'; g.fillText(noteName(m), kx + ww / 2, y + h - 6); }
+      if (m % 12 === 0 && lv <= 0) { const fs = Math.max(9, Math.min(13, ww * 0.42)); g.fillStyle = '#8a8494'; g.font = 'bold ' + fs + 'px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'alphabetic'; g.fillText(noteName(m), kx + ww / 2, y + h - 6); }
     }
     // teclas pretas
     const bw = ww * 0.6, bh = h * 0.62;
+    const rB = Math.max(6, Math.min(bw * 0.5, 18));
     for (let wi = first - 1; wi <= last; wi++) {
       if (wi < 0) continue;
       const m = whiteToMidi(wi) + 1; if (m > HIGH || !isBlack(m)) continue;
@@ -129,11 +154,13 @@ export class Keyboard2D {
       const gr = g.createLinearGradient(0, y, 0, y + bh); gr.addColorStop(0, '#2a2730'); gr.addColorStop(1, '#0b0a0d');
       g.fillStyle = gr; g.fillRect(bx, y, bw, bh);
       if (lv > 0) {
-        g.save(); g.shadowColor = HAND_COLORS[k.hand || 'X']; g.shadowBlur = 14;
-        g.globalAlpha = Math.min(1, lv + 0.15); g.fillStyle = HAND_COLORS[k.hand || 'X']; g.fillRect(bx + 1, y, bw - 2, bh - 2); g.restore();
-        g.fillStyle = '#fff'; g.font = 'bold ' + Math.max(8, Math.min(11, bw * 0.5)) + 'px system-ui, sans-serif'; g.textAlign = 'center'; g.fillText(noteName(m), bx + bw / 2, y + bh - 5);
-      }
+        const col = HAND_COLORS[k.hand || 'X'];
+        g.globalAlpha = Math.min(0.55, lv * 0.6); g.fillStyle = col; g.fillRect(bx + 1, y, bw - 2, bh - 2); g.globalAlpha = 1;
+        fingers.push([bx + bw / 2, y + bh * 0.72, rB, col, noteName(m), k]);
+      } else if (pv.has(m)) rings.push([bx + bw / 2, y + bh * 0.72, rB * 0.62, HAND_COLORS[pv.get(m) || 'X']]);
     }
+    for (const rg of rings) this._ring(...rg);
+    for (const f of fingers) this._finger(f[0], f[1], f[2], f[3], f[4], f[5], now);
     g.restore();
     g.strokeStyle = '#3a3546'; g.lineWidth = 1; g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
     if (label) { g.fillStyle = '#a9a3b8'; g.font = '11px system-ui, sans-serif'; g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillText(label, x + 2, y - 8); }

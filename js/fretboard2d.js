@@ -54,7 +54,13 @@ export class Fretboard2D {
   dispose() { this.visible = false; this.ro.disconnect(); }
 
   /* ---------- notas ---------- */
-  play(notes, durMs, upcoming) {
+  setPreview(list) {
+    const seen = new Set(); this.preview = [];
+    for (const n of list || []) { if (n.dead || !this.strings[n.string]) continue; const k = n.string + ':' + n.fret; if (seen.has(k)) continue; seen.add(k); this.preview.push(n); }
+    this.dirty = true;
+  }
+  play(notes, durMs, upcoming, preview) {
+    this.setPreview(preview);
     const now = performance.now(), hit = new Set();
     for (const n of notes) {
       const st = this.strings[n.string]; if (!st) continue;
@@ -68,7 +74,7 @@ export class Fretboard2D {
     this._plan(notes.map(n => n.fret), (upcoming || []).map(n => n.fret));
     this.dirty = true;
   }
-  stopAll() { const now = performance.now(); for (let s = 1; s <= this.N; s++) { const st = this.strings[s]; if (st && st.active) { st.active = false; st.release = now; } } this.dirty = true; }
+  stopAll() { this.preview = []; const now = performance.now(); for (let s = 1; s <= this.N; s++) { const st = this.strings[s]; if (st && st.active) { st.active = false; st.release = now; } } this.dirty = true; }
   showStatic(notes, cursorString) {
     const map = new Map(); (notes || []).forEach(n => map.set(n.string, n));
     for (let s = 1; s <= this.N; s++) { const st = this.strings[s]; const n = map.get(s); st.static = !!n; st.active = false; st.release = 0; st.note = n || null; st.fret = n ? n.fret : 0; st.cursor = cursorString === s; }
@@ -208,14 +214,25 @@ export class Fretboard2D {
         // seta: a corda continua acesa até a ponte
         g.fillStyle = st.color; g.globalAlpha = 0.85 * S.level;
         g.beginPath(); g.moveTo(W - 2, y + disp(this._xOf(W - 2, G))); g.lineTo(W - 12, y - 6); g.lineTo(W - 12, y + 6); g.closePath(); g.fill(); g.globalAlpha = 1;
-        markers.push({ x: S.fret > 0 ? fpx : Math.max(G.pad - 14, nutX - 14), y: y + (S.fret > 0 ? D : 0), fret: S.fret, color: st.color, level: S.level, dead: st.note && st.note.dead, open: S.fret === 0 });
+        const grow = st.static ? 1 : Math.min(1, 0.6 + 0.4 * (now - (st.hitT || st.t0)) / 130);
+        markers.push({ x: S.fret > 0 ? fpx : Math.max(G.pad - 14, nutX - 14), y: y + (S.fret > 0 ? D : 0), fret: S.fret, color: st.color, level: S.level, dead: st.note && st.note.dead, open: S.fret === 0, grow, s, rf: st.fret });
       }
       // nome da corda solta
       if (G.pad > 34) { const m = this.tuning[this.N - s]; g.fillStyle = st.color; g.font = 'bold 12px system-ui, sans-serif'; g.textAlign = 'center'; g.fillText(NOTE[m % 12], 12, y); }
     }
     // marcadores (por cima das cordas)
-    const r = Math.max(9, Math.min(G.sp * 0.42, 22));
+    const r0 = Math.max(9, Math.min(G.sp * 0.42, 22));
+    // prévia: anel vazado menor na cor da corda, onde as próximas notas vão cair
+    for (const n of this.preview || []) {
+      if (markers.some(mk => mk.s === n.string && mk.rf === n.fret)) continue;
+      const st = this.strings[n.string]; if (!st) continue;
+      const px = n.fret > 0 ? this._px(this._fingerX(n.fret), G) : Math.max(G.pad - 14, nutX - 14);
+      if (px < G.pad - 30 || px > W + 10) continue;
+      g.strokeStyle = st.color; g.lineWidth = Math.max(2, r0 * 0.16);
+      g.beginPath(); g.arc(px, this._rowY(n.string, G), r0 * 0.6, 0, Math.PI * 2); g.stroke();
+    }
     for (const mk of markers) {
+      const r = r0 * (mk.grow || 1);
       g.save(); g.shadowColor = mk.color; g.shadowBlur = 20 * mk.level;
       g.fillStyle = mk.color; g.beginPath(); g.arc(mk.x, mk.y, r, 0, Math.PI * 2); g.fill(); g.restore();
       g.lineWidth = 2; g.strokeStyle = 'rgba(255,255,255,.9)'; g.beginPath(); g.arc(mk.x, mk.y, r, 0, Math.PI * 2); g.stroke();
@@ -225,7 +242,7 @@ export class Fretboard2D {
     // marcador de passagem do mouse
     if (this.hover) {
       const h = this.hover; const hx = h.fret > 0 ? this._px(this._fingerX(h.fret), G) : nutX - 14; const hy = this._rowY(h.string, G);
-      g.strokeStyle = 'rgba(255,255,255,.8)'; g.lineWidth = 2; g.setLineDash([4, 3]); g.beginPath(); g.arc(hx, hy, r, 0, Math.PI * 2); g.stroke(); g.setLineDash([]);
+      g.strokeStyle = 'rgba(255,255,255,.8)'; g.lineWidth = 2; g.setLineDash([4, 3]); g.beginPath(); g.arc(hx, hy, r0, 0, Math.PI * 2); g.stroke(); g.setLineDash([]);
     }
     // minimapa do braço inteiro com a janela
     const mx0 = G.pad, mx1 = W - 8, my = 6, mw = mx1 - mx0;

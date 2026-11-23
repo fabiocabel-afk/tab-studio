@@ -9,7 +9,9 @@ const keyX = m => (whiteIndex(m) - WHITE_COUNT / 2 + (isBlack(m) ? 1 : 0.5)) * K
 
 function label(text, color, size) {
   const c = document.createElement('canvas'); c.width = 128; c.height = 64;
-  const g = c.getContext('2d'); g.fillStyle = color; g.font = 'bold 40px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, 64, 34);
+  const g = c.getContext('2d'); g.font = 'bold 40px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  if (color === '#ffffff') { g.lineWidth = 6; g.strokeStyle = 'rgba(0,0,0,.45)'; g.strokeText(text, 64, 34); }
+  g.fillStyle = color; g.fillText(text, 64, 34);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthWrite: false }));
   s.scale.set(size * 2, size, 1); return s;
@@ -59,7 +61,6 @@ export class Keyboard3D {
     const back = new THREE.Mesh(new THREE.BoxGeometry(span, 4.5, 4), caseMat); back.position.set(0, 0.6, -KL / 2 - 2.2); this.scene.add(back);
     const felt = new THREE.Mesh(new THREE.BoxGeometry(span - 4, 0.3, 0.6), new THREE.MeshStandardMaterial({ color: '#6a0f17', roughness: 0.9 })); felt.position.set(0, 0.85, -KL / 2 - 0.1); this.scene.add(felt);
     [-1, 1].forEach(sg => { const cheek = new THREE.Mesh(new THREE.BoxGeometry(2.4, 4.0, KL + 6), caseMat); cheek.position.set(sg * (span / 2 - 1.2), 0.2, 0.6); this.scene.add(cheek); });
-    this.tags = new Map();
   }
   setView(v) {
     this.view = ['player', 'top', 'full'].includes(v) ? v : 'player';
@@ -89,7 +90,8 @@ export class Keyboard3D {
   dispose() { this.visible = false; this.ro.disconnect(); this.controls.dispose(); this.renderer.dispose(); }
 
   _prep(notes) { const l = (notes || []).filter(n => n.pitch != null && !n.dead).map(n => ({ pitch: clampPitch(n.pitch), hand: n.hand || null, tie: n.tie })); this.hands.assign(l); return l; }
-  play(notes, durMs) {
+  play(notes, durMs, upcoming, preview) {
+    this.setPreview(preview);
     const now = performance.now(), hit = new Set();
     for (const n of this._prep(notes)) {
       const k = this.keys.get(n.pitch); if (!k) continue;
@@ -99,7 +101,7 @@ export class Keyboard3D {
     for (const k of this.keys.values()) if (k.active && !hit.has(k.m)) { k.active = false; k.release = now; }
     this.dirty = true;
   }
-  stopAll() { const now = performance.now(); for (const k of this.keys.values()) if (k.active) { k.active = false; k.release = now; } this.dirty = true; }
+  stopAll() { const now = performance.now(); for (const k of this.keys.values()) if (k.active) { k.active = false; k.release = now; } this.setPreview([]); this.dirty = true; }
   showStatic(notes) {
     for (const k of this.keys.values()) { k.static = false; k.active = false; k.release = 0; }
     const t = new HandTracker(); t.c = Object.assign({}, this.hands.c);
@@ -107,10 +109,46 @@ export class Keyboard3D {
     for (const n of l) { const k = this.keys.get(n.pitch); if (k) { k.static = true; k.hand = n.hand; } }
     this.dirty = true;
   }
-  _tag(k, on) {
-    let t = this.tags.get(k.m);
-    if (on && !t) { t = label(noteName(k.m), '#ffffff', 1.3); t.position.set(keyX(k.m), k.black ? 4.2 : 3.4, k.black ? -1 : 3); this.scene.add(t); this.tags.set(k.m, t); }
-    if (t) t.visible = on;
+  /* esfera do dedo (cor forte da mão) com a nota em branco, presa na tecla */
+  _finger(k, lv, now) {
+    if (!k.finger) {
+      const r = k.black ? 0.78 : 1.08;
+      const mat = new THREE.MeshBasicMaterial({ color: '#ffffff' });   // cor chapada e forte, sem esmaecer com a luz
+      const sph = new THREE.Mesh(new THREE.SphereGeometry(r, 24, 16), mat);
+      sph.position.set(0, k.black ? 0.55 + r * 0.7 : 0.7 + r * 0.7, k.black ? BL - 2.4 : KL - 3.2);
+      const tag = label(noteName(k.m), '#ffffff', r * 1.25);
+      tag.material.depthTest = false; tag.renderOrder = 10; tag.position.copy(sph.position); tag.position.y += r * 0.15;
+      k.pivot.add(sph); k.pivot.add(tag);
+      k.finger = { sph, tag, mat };
+    }
+    const on = lv > 0.05;
+    k.finger.sph.visible = on; k.finger.tag.visible = on;
+    if (!on) return;
+    const col = HAND_COLORS[k.hand || 'X'];
+    k.finger.mat.color.set(col);
+    const grow = k.static ? 1 : Math.min(1, 0.6 + 0.4 * (now - k.t0) / 130);
+    const sc = grow * (k.active || k.static ? 1 : Math.max(0.3, lv / 0.6));
+    k.finger.sph.scale.setScalar(sc); k.finger.tag.scale.set(sc * (k.black ? 1.55 : 2.1), sc * (k.black ? 0.78 : 1.06), 1);
+  }
+  /* prévia: anel vazado menor, na cor da mão, nas teclas que ainda vão tocar */
+  setPreview(list) {
+    const t = new HandTracker(); t.c = Object.assign({}, this.hands.c);
+    const l = (list || []).filter(n => n.pitch != null && !n.dead).map(n => ({ pitch: clampPitch(n.pitch), hand: n.hand || null })); t.assign(l);
+    const want = new Map(); for (const n of l) if (!want.has(n.pitch)) want.set(n.pitch, n.hand);
+    for (const k of this.keys.values()) {
+      const h = want.get(k.m);
+      if (h === undefined && !k.ring) continue;
+      if (!k.ring) {
+        const r = k.black ? 0.5 : 0.7;
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(r, 0.12, 8, 28), new THREE.MeshBasicMaterial({ color: '#ffffff' }));
+        ring.rotation.x = Math.PI / 2;
+        ring.position.set(0, k.black ? 0.6 : 0.75, k.black ? BL - 2.4 : KL - 3.2);
+        k.pivot.add(ring); k.ring = ring;
+      }
+      k.ring.visible = h !== undefined;
+      if (h !== undefined) k.ring.material.color.set(HAND_COLORS[h || 'X']);
+    }
+    this.dirty = true;
   }
   _update(now) {
     let anim = false, sum = 0, cnt = 0;
@@ -124,9 +162,10 @@ export class Keyboard3D {
         // a tecla inteira ganha a cor da mão (branca e preta), não só afunda
         const col = new THREE.Color(HAND_COLORS[k.hand || 'X']);
         const base = new THREE.Color(k.black ? '#141317' : '#f3efe6');
-        k.mat.color.copy(base).lerp(col, lv > 0 ? Math.min(1, 0.55 + lv) : 0);
-        k.mat.emissive = col; k.mat.emissiveIntensity = lv * (k.black ? 0.9 : 0.3);
-        this._tag(k, lv > 0.3);
+        k.mat.color.copy(base).lerp(col, lv > 0 ? Math.min(0.55, 0.25 + lv * 0.4) : 0);
+        k.mat.emissive = col; k.mat.emissiveIntensity = lv * (k.black ? 0.6 : 0.25);
+        if (k.ring) k.ring.visible = k.ring.visible && lv <= 0.05;
+        this._finger(k, lv, now);
         k.lv = lv;
       }
       if (lv > 0) { sum += keyX(k.m); cnt++; }

@@ -2,7 +2,8 @@
 export const LOW = 21, HIGH = 108;
 const BLACK = [false, true, false, true, false, false, true, false, true, false, true, false];
 const NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-export const HAND_COLORS = { L: '#3aa0ff', R: '#f2a33a', X: '#f2a33a' };
+// identidade visual: laranja (mão direita) e verde (mão esquerda)
+export const HAND_COLORS = { L: '#99CC33', R: '#FF9901', X: '#FF9901' };
 
 export function isBlack(m) { return BLACK[((m % 12) + 12) % 12]; }
 export function noteName(m) { return NAMES[((m % 12) + 12) % 12] + (Math.floor(m / 12) - 1); }
