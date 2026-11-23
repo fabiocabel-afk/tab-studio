@@ -141,7 +141,11 @@ label.chk.sm { font-size: 12px; }
 
 /* ---------- player ---------- */
 #player { background: var(--bg2); border-top: 1px solid var(--line); padding: 0 10px 8px; padding-bottom: max(8px, env(safe-area-inset-bottom)); }
-.pl-progress input { width: 100%; margin: 0; height: 18px; }
+.pl-progress { display: flex; align-items: center; gap: 8px; }
+.pl-progress input { flex: 1; min-width: 0; width: 100%; margin: 0; height: 18px; }
+.pl-t { font-variant-numeric: tabular-nums; font-size: 12px; color: var(--tx2); min-width: 34px; }
+.pl-t.end { text-align: right; }
+.pb.ic { display: inline-flex; align-items: center; justify-content: center; padding: 0 9px; }
 .pl-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .pb { background: var(--bg3); border: 1px solid var(--line); border-radius: 8px; min-width: 38px; height: 36px; cursor: pointer; font-size: 15px; padding: 0 8px; }
 .pb.main { background: var(--ac); color: #1b1305; border-color: var(--ac); width: 52px; font-size: 18px; }
@@ -243,7 +247,7 @@ dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; ma
 /* ---------- player centralizado ---------- */
 .pl-row { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; }
 .pl-left { min-width: 0; }
-.pl-center { display: flex; align-items: center; gap: 10px; justify-content: center; }
+.pl-center { display: flex; align-items: center; gap: 8px; justify-content: center; }
 .pl-center .pb.main { width: 64px; height: 44px; font-size: 20px; border-radius: 12px; box-shadow: 0 0 0 3px rgba(242,163,58,.25); }
 .pl-center .pl-time { min-width: 0; }
 .pl-right { justify-content: flex-end; }

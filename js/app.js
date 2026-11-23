@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '1.9.3';
+  const APP_VERSION = '1.10.0';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Store = window.TabStore;
@@ -349,7 +349,7 @@
   api.playerFinished.on(() => setTimeout(() => { if (!S.playing) Wake.release(); }, 100));
   api.playerPositionChanged.on(e => {
     S.endTime = e.endTime;
-    $('plTime').textContent = fmtTime(e.currentTime) + ' / ' + fmtTime(e.endTime);
+    $('plCur').textContent = fmtTime(e.currentTime); $('plEnd').textContent = fmtTime(e.endTime);
     if (!S.seeking && e.endTime > 0) $('rngSeek').value = Math.round(e.currentTime / e.endTime * 1000);
     loopCycleCheck(e.currentTick);
     S.lastTick = e.currentTick;
@@ -462,6 +462,26 @@
   /* ---------------- player ---------------- */
   $('btnPlay').onclick = () => { if (!S.score) return; if (!S.playing) Wake.request(); api.playPause(); };
   $('btnStop').onclick = () => { api.stop(); };
+  /* pautas (linhas da partitura): ⏪ volta uma, ⏩ avança uma, ⏮ volta ao início */
+  function systemBars() {
+    try { const bl = api.boundsLookup; return bl && bl.staffSystems ? bl.staffSystems.map(s => s.bars.map(b => b.index)).filter(a => a.length) : []; } catch (e) { return []; }
+  }
+  function jumpSystem(dir) {
+    if (!S.score) return;
+    const n = S.score.masterBars.length, cur = S.edit ? S.cur.bar : tbar.cur;
+    const sys = systemBars();
+    let bar;
+    if (!sys.length) bar = cur + dir * 4;
+    else {
+      let i = sys.findIndex(a => cur >= a[0] && cur <= a[a.length - 1]);
+      if (i < 0) i = sys.findIndex(a => a[0] > cur) - 1;
+      bar = sys[Math.max(0, Math.min(sys.length - 1, i + dir))][0];
+    }
+    seekToBar(Math.max(0, Math.min(n - 1, bar)));
+  }
+  $('btnPrevSys').onclick = () => jumpSystem(-1);
+  $('btnNextSys').onclick = () => jumpSystem(1);
+  $('btnHome').onclick = () => { if (S.score) seekToBar(0); };
   $('rngSeek').addEventListener('input', () => { S.seeking = true; });
   $('rngSeek').addEventListener('change', () => {
     S.seeking = false;

@@ -222,13 +222,15 @@
 
   <!-- Player -->
   <footer id="player">
-    <div class="pl-progress"><input type="range" id="rngSeek" min="0" max="1000" value="0"></div>
+    <div class="pl-progress"><span class="pl-t" id="plCur" title="Tempo decorrido">0:00</span><input type="range" id="rngSeek" min="0" max="1000" value="0" aria-label="Posição na música"><span class="pl-t end" id="plEnd" title="Duração">0:00</span></div>
     <div class="pl-row">
       <div class="pl-left"><span class="pl-status" id="plStatus"></span></div>
       <div class="pl-center">
-        <button class="pb" id="btnStop" title="Parar">■</button>
+        <button class="pb ic" id="btnHome" title="Voltar ao início"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M5 5h2.4v14H5zM19 5v14l-6.2-7zM12.6 5v14L6.4 12z"/></svg></button>
+        <button class="pb ic" id="btnPrevSys" title="Pauta anterior"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 5v14L4 12zM20.5 5v14l-8-7z"/></svg></button>
         <button class="pb main" id="btnPlay" title="Tocar / pausar (Espaço)" disabled>▶</button>
-        <span class="pl-time" id="plTime">0:00 / 0:00</span>
+        <button class="pb ic" id="btnNextSys" title="Próxima pauta"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 5v14l8-7zM3.5 5v14l8-7z"/></svg></button>
+        <button class="pb ic" id="btnStop" title="Parar"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M6 6h12v12H6z"/></svg></button>
       </div>
       <div class="pl-right">
         <label class="pl-ctl" title="Velocidade">⏱
