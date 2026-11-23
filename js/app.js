@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '1.7.0';
+  const APP_VERSION = '1.7.1';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Store = window.TabStore;
@@ -330,6 +330,8 @@
     else { Wake.release(); $('plStatus').textContent = S.playerReady ? 'Pausado' : $('plStatus').textContent; }
     if (S.fb) { if (!S.playing) { S.fb.stopAll(); show3dIdle(); } }
   });
+  // fim da música: garante que a tela volta a apagar sozinha
+  api.playerFinished.on(() => setTimeout(() => { if (!S.playing) Wake.release(); }, 100));
   api.playerPositionChanged.on(e => {
     S.endTime = e.endTime;
     $('plTime').textContent = fmtTime(e.currentTime) + ' / ' + fmtTime(e.endTime);
@@ -1127,6 +1129,9 @@
   prefs.vizViews = Object.assign({ neck3d: 'player', neck2d: 'focus7', keys3d: 'player', keys2d: 'range' }, prefs.vizViews || {});
   if (!prefs.vizNeck) prefs.vizNeck = 'neck3d';
   if (!prefs.vizOther) prefs.vizOther = 'keys3d';
+  /* 3D/2D guardado separado para cordas e teclas; o tipo (cordas/teclas) segue a trilha escolhida */
+  if (!prefs.dimNeck) prefs.dimNeck = prefs.vizNeck.startsWith('neck') ? prefs.vizNeck.slice(4) : '3d';
+  if (!prefs.dimKeys) prefs.dimKeys = prefs.vizOther.slice(4) || '3d';
   function isPerc(t) { return t.staves[0].isPercussion || t.playbackInfo.primaryChannel === 9; }
   /* braço só para instrumentos de traste (guitarra, violão, baixo, banjo…); GP5 dá afinação até para teclado */
   function neckable(t) {
@@ -1190,7 +1195,10 @@
     }
     $('selVizView').hidden = false; $('selVizDim').hidden = false; $('selVizPrev').hidden = false;
     const stringedTrack = !t || neckable(t);
-    let mode = stringedTrack ? prefs.vizNeck : prefs.vizOther;
+    // cordas → braço; teclas, sopros, voz etc. → teclado. Só muda se a pessoa escolheu outro tipo para ESTA trilha
+    if (S.vizPick && (S.vizPick.track !== S.primary || S.vizPick.score !== S.score)) S.vizPick = null; // trocou de trilha: volta ao tipo certo
+    const pick = S.vizPick ? S.vizPick.mode : null;
+    let mode = pick || (stringedTrack ? 'neck' + prefs.dimNeck : 'keys' + prefs.dimKeys);
     if (!modes.includes(mode)) mode = modes[0];
     S.vizMode = mode; S.threeTrack = t ? S.primary : -1;
     // três listas: cordas/teclas · 3D/2D · visão
@@ -1221,7 +1229,9 @@
   function setVizMode(v) {
     if (!VIZ_MODS[v]) return;
     const t = S.score && S.score.tracks[S.primary];
-    if (!t || neckable(t)) prefs.vizNeck = v; else prefs.vizOther = v;
+    const kind = v.slice(0, 4), natural = (!t || neckable(t)) ? 'neck' : 'keys';
+    if (kind === 'neck') prefs.dimNeck = v.slice(4); else prefs.dimKeys = v.slice(4);
+    S.vizPick = kind !== natural ? { track: S.primary, score: S.score, mode: v } : null;
     savePrefs(); sync3d();
   }
   $('selVizKind').onchange = () => setVizMode($('selVizKind').value + $('selVizDim').value);
