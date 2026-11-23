@@ -22,23 +22,24 @@
       <span>Tab Studio</span>
     </div>
     <div class="song-title" id="songTitle">—</div>
-    <nav class="tb-group" id="fileGroup">
-      <button class="tb" id="btnOpen" title="Abrir arquivo (Ctrl+O)"><i>📂</i><span>Abrir</span></button>
-      <button class="tb" id="btnNew" title="Nova música"><i>✚</i><span>Nova</span></button>
-      <button class="tb" id="btnSave" title="Salvar em .gp (Ctrl+S)"><i>💾</i><span>Salvar</span></button>
-      <button class="tb" id="btnMore" title="Mais opções"><i>⋯</i><span>Mais</span></button>
-    </nav>
     <nav class="tb-group">
       <button class="tb toggle" id="btnEdit" title="Modo edição (E)"><i>✎</i><span>Editar</span></button>
       <button class="tb toggle" id="btn3d" title="Instrumento na tela (braço / teclado)"><i>🎸</i><span>Instrumento</span></button>
       <button class="tb toggle" id="btnTracks" title="Trilhas e mixer"><i>🎚</i><span>Trilhas</span></button>
       <button class="tb toggle" id="btnView" title="Visualização"><i>👁</i><span>Ver</span></button>
     </nav>
+    <button class="tb burger" id="btnMore" title="Menu" aria-label="Menu" aria-haspopup="true">
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><rect x="3" y="5" width="18" height="2.2" rx="1.1" fill="currentColor"/><rect x="3" y="10.9" width="18" height="2.2" rx="1.1" fill="currentColor"/><rect x="3" y="16.8" width="18" height="2.2" rx="1.1" fill="currentColor"/></svg>
+    </button>
     <input type="file" id="fileInput" accept=".gp,.gp3,.gp4,.gp5,.gpx,.musicxml,.mxl,.xml,.capx,.tex,.txt" hidden>
   </header>
 
   <!-- Menu "Mais" -->
   <div class="menu" id="menuMore" hidden>
+    <button data-act="open">📂 Abrir arquivo… <kbd>Ctrl+O</kbd></button>
+    <button data-act="new">✚ Nova música</button>
+    <button data-act="save">💾 Salvar <kbd>Ctrl+S</kbd></button>
+    <hr>
     <button data-act="saveAs">💾 Salvar como .gp…</button>
     <button data-act="midi">🎹 Exportar MIDI</button>
     <button data-act="print">🖨 Imprimir / PDF</button>
@@ -46,6 +47,7 @@
     <button data-act="info">ℹ️ Informações da música</button>
     <button data-act="shortcuts">⌨️ Atalhos do editor</button>
     <button data-act="about">❔ Sobre</button>
+    <div class="menu-ver" id="menuVer"></div>
   </div>
 
   <!-- Painel de visualização -->

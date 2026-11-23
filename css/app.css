@@ -265,3 +265,18 @@ dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; ma
 #lpProgRow.off { opacity: .45; pointer-events: none; }
 /* os cursores do alphaTab têm z-index alto: ficam presos dentro da área da partitura */
 #viewport { isolation: isolate; }
+
+/* ---------- menu hambúrguer ---------- */
+.tb.burger { padding: 6px 8px; margin-left: 4px; }
+.tb.burger svg { display: block; }
+.menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 6px; }
+.menu kbd { float: right; font-size: 11px; color: var(--tx2); background: var(--bg3); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; margin-left: 14px; font-family: inherit; }
+.menu-ver { border-top: 1px solid var(--line); margin-top: 4px; padding: 8px 12px 4px; font-size: 12px; color: var(--tx2); text-align: right; }
+/* hambúrguer sempre no canto direito da primeira linha */
+#topbar .song-title { order: 1; }
+#topbar .brand { order: 0; }
+#topbar .tb-group { order: 3; }
+#topbar .tb.burger { order: 4; }
+@media (max-width: 900px) {
+  #topbar .tb.burger { order: 2; }
+}

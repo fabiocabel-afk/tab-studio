@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '1.5.0';
+  const APP_VERSION = '1.6.0';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Store = window.TabStore;
@@ -1208,12 +1208,10 @@
 
   /* ---------------- botões do topo / menus ---------------- */
   function closePopups(except) { ['menuMore', 'viewPanel'].forEach(id => { if (id !== except) $(id).hidden = true; }); $('btnView').classList.toggle('on', !$('viewPanel').hidden); }
-  $('btnOpen').onclick = () => $('fileInput').click();
   $('wOpen').onclick = () => $('fileInput').click();
   $('fileInput').onchange = () => { const f = $('fileInput').files[0]; $('fileInput').value = ''; openFile(f); };
-  $('btnNew').onclick = newSongDialog; $('wNew').onclick = newSongDialog;
+  $('wNew').onclick = newSongDialog;
   $('wDemo').onclick = openDemo;
-  $('btnSave').onclick = () => saveGp(false);
   $('btnEdit').onclick = () => toggleEdit();
   $('btn3d').onclick = () => toggle3d();
   $('btnTracks').onclick = () => { const p = $('tracksPanel'); p.hidden = !p.hidden; $('btnTracks').classList.toggle('on', !p.hidden); };
@@ -1222,10 +1220,12 @@
   $('btnView').onclick = e => { e.stopPropagation(); const m = $('viewPanel'); closePopups('viewPanel'); m.hidden = !m.hidden; $('btnView').classList.toggle('on', !m.hidden); };
   $('viewPanel').onclick = e => e.stopPropagation();
   document.addEventListener('click', () => closePopups());
+  $('menuVer').textContent = 'Tab Studio · versão ' + APP_VERSION;
   $('menuMore').onclick = e => {
-    const act = e.target.dataset.act; if (!act) return;
+    const b = e.target.closest('[data-act]'); if (!b) return;
+    const act = b.dataset.act;
     closePopups();
-    ({ saveAs: () => saveGp(true), midi: exportMidi, print: printScore, demo: openDemo, info: infoDialog, shortcuts: shortcutsDialog, about: aboutDialog })[act]();
+    ({ open: () => $('fileInput').click(), new: newSongDialog, save: () => saveGp(false), saveAs: () => saveGp(true), midi: exportMidi, print: printScore, demo: openDemo, info: infoDialog, shortcuts: shortcutsDialog, about: aboutDialog })[act]();
   };
 
   /* arrastar e soltar */
