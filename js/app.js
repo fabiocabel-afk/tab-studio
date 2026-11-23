@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '1.3.0';
+  const APP_VERSION = '1.4.0';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Store = window.TabStore;
@@ -1040,7 +1040,7 @@
     showMsg('Atalhos do editor', '<table>' + rows.map(r => '<tr><td><kbd>' + r[0] + '</kbd></td><td>' + r[1] + '</td></tr>').join('') + '</table>');
   }
   function aboutDialog() {
-    showMsg('Sobre o Tab Studio', 'Versão ' + APP_VERSION + '.<br>Leitura, reprodução, impressão e edição de tablaturas e partituras no navegador, funcionando offline.<br><br>Formatos de leitura: Guitar Pro 3, 4, 5 (.gp3/.gp4/.gp5), 6 (.gpx), 7 e 8 (.gp), MusicXML, Capella e alphaTex.<br>Formato de gravação: Guitar Pro 7/8 (.gp) e MIDI.<br><br><span class="muted">Motor de notação: alphaTab (MPL-2.0). Fonte musical: Bravura (SIL OFL). Sons: SoundFont Sonivox. 3D: three.js (MIT).</span>');
+    showMsg('Sobre o Tab Studio', 'Versão ' + APP_VERSION + '.<br>Leitura, reprodução, impressão e edição de tablaturas e partituras no navegador, funcionando offline.<br><br>Formatos de leitura: Guitar Pro 3, 4, 5 (.gp3/.gp4/.gp5), 6 (.gpx), 7 e 8 (.gp), MusicXML, Capella e alphaTex.<br>Formato de gravação: Guitar Pro 7/8 (.gp) e MIDI.<br><br><span class="muted">Motor de notação: alphaTab (MPL-2.0). Fonte musical: Bravura (SIL OFL). Sons: SoundFont Sonivox. 3D: three.js (MIT). Guitarra Les Paul 3D: "Generic Les Paul Guitar", de simonrepp (Blend Swap, CC0).</span>');
   }
 
   /* ---------------- instrumento na tela (braço/teclado, 2D/3D) ---------------- */

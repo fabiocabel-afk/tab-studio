@@ -5,6 +5,48 @@ import * as THREE from 'three';
 import { OrbitControls } from '../vendor/OrbitControls.js';
 import { RoomEnvironment } from '../vendor/RoomEnvironment.js';
 import { mergeGeometries } from '../vendor/BufferGeometryUtils.js';
+import { GLTFLoader } from '../vendor/GLTFLoader.js';
+
+/* Les Paul 3D: modelo "Generic Les Paul Guitar" de simonrepp (Blend Swap, licença CC0),
+ * convertido para o sistema do app (x: pestana 0 → ponte 100, y: para cima, z: graves em +z). */
+const LP_URL = new URL('../models/lespaul.glb', import.meta.url).href;
+const LP_COLORS = {
+  'Finish': ['#45070b', 0.05, 0.32], 'Golden Metal': ['#d4a943', 1, 0.22], 'Silver Metal': ['#d8d8de', 1, 0.22],
+  'Fretboard Wood': ['#1a0e08', 0, 0.8], 'Ivory': ['#e8dcc0', 0, 0.4], 'Plastic': ['#0c0b0d', 0.1, 0.3],
+  'Knobs': ['#b8862e', 0.75, 0.28], 'Pickup Wrap Fabric': ['#2a1a10', 0.3, 0.6], 'Pickup Bobbin': ['#5c3519', 0.85, 0.35]
+};
+let LP_PROMISE = null;
+function loadLesPaul() {
+  if (!LP_PROMISE) {
+    const loader = new GLTFLoader();
+    // versão do link de visualização: o modelo vem embutido num .js (o servidor de lá não entrega .glb)
+    const src = window.TABSTUDIO_LP_B64
+      ? loader.parseAsync(Uint8Array.from(atob(window.TABSTUDIO_LP_B64), c => c.charCodeAt(0)).buffer, '')
+      : loader.loadAsync(LP_URL);
+    LP_PROMISE = src.then(gltf => {
+      const scene = gltf.scene;
+      scene.traverse(o => {
+        if (!o.isMesh) return;
+        const C = LP_COLORS[o.material.name];
+        if (C) o.material = new THREE.MeshStandardMaterial({ color: C[0], metalness: C[1], roughness: C[2], envMapIntensity: o.material.name === 'Finish' ? 0.4 : 1 });
+        o.userData.shared = true;
+      });
+      scene.updateMatrixWorld(true);
+      // altura da escala (para as marcações ficarem rentes à madeira)
+      // a escala é abaulada: pega o ponto mais alto (centro) em algumas casas
+      let top = -Infinity;
+      for (const n of [3, 7, 12, 17]) for (const z of [-1.5, -0.5, 0, 0.5, 1.5]) {
+        const ray = new THREE.Raycaster(new THREE.Vector3((fretX(n - 1) + fretX(n)) / 2, 10, z), new THREE.Vector3(0, -1, 0));
+        const hit = ray.intersectObject(scene, true).find(h => h.object.material && h.object.material.color && h.object.material.color.getHexString() === '1a0e08');
+        if (hit) top = Math.max(top, hit.point.y);
+      }
+      scene.userData.boardY = isFinite(top) ? top : 0;
+      return scene;
+    });
+    LP_PROMISE.catch(() => { LP_PROMISE = null; });
+  }
+  return LP_PROMISE;
+}
 
 const L = 100;            // comprimento de escala (pestana → ponte)
 const FRETS = 22;          // Les Paul
@@ -91,6 +133,7 @@ export class Fretboard3D {
     this.ro.observe(canvas.parentElement || canvas);
 
     this.setInstrument(this.tuning);
+    loadLesPaul().then(model => { this.model = model; this.setInstrument(this.tuning); }).catch(() => { /* fica a guitarra desenhada por código */ });
     this.resize();
     this.setCamera('player');
     this._loop = this._loop.bind(this);
@@ -124,11 +167,12 @@ export class Fretboard3D {
   _clearGroup(g, keepMaterials) {
     while (g.children.length) {
       const o = g.children.pop();
-      o.traverse(c => { if (c.geometry && !c.isSprite) c.geometry.dispose(); if (!keepMaterials && c.material) { const ms = Array.isArray(c.material) ? c.material : [c.material]; ms.forEach(m => { if (m.map) m.map.dispose(); m.dispose(); }); } });
+      o.traverse(c => { if (c.userData.shared) return; if (c.geometry && !c.isSprite) c.geometry.dispose(); if (!keepMaterials && c.material) { const ms = Array.isArray(c.material) ? c.material : [c.material]; ms.forEach(m => { if (m.map) m.map.dispose(); m.dispose(); }); } });
     }
   }
   /* ---------- Les Paul (contorno tirado das fotos de referência) ---------- */
   _buildNeck() {
+    if (this.model) { this._buildFromModel(); return; }
     const g = this.static;
     const bass = this.flip ? -1 : 1;            // lado das cordas graves (+z quando não invertido)
     const GOLD = new THREE.MeshStandardMaterial({ color: '#d4a943', metalness: 1.0, roughness: 0.22 });
@@ -307,12 +351,44 @@ export class Fretboard3D {
       lab.position.set(-2.4, 1.2, this.stringZ(st, 0)); g.add(lab);
     }
   }
+  /** guitarra a partir do modelo 3D (Les Paul real) + marcações e números do app */
+  _buildFromModel() {
+    const g = this.static;
+    const bass = this.flip ? -1 : 1;
+    const inst = this.model.clone();
+    inst.traverse(o => { if (o.isMesh) o.userData.shared = true; });
+    inst.scale.z = bass * (this.N >= 7 ? 1.25 : 1);     // canhoto espelha; 7 cordas alarga um pouco o braço
+    inst.userData.noMerge = true;
+    g.add(inst);
+    const by = this.model.userData.boardY || 0;
+    // marcações trapezoidais (a Les Paul original não tem no modelo)
+    const inlayMat = new THREE.MeshStandardMaterial({ color: '#8a8170', roughness: 0.45, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
+    MARKS.forEach(n => {
+      const x1 = fretX(n - 1), x2 = fretX(n), sp = x2 - x1, xm = (x1 + x2) / 2, hw = this.halfWidth(xm);
+      const a = sp * 0.22, wNut = hw * 0.6, wBody = hw * 0.78;
+      const tr = new THREE.Shape();
+      tr.moveTo(xm - a, -wNut); tr.lineTo(xm + a, -wBody); tr.lineTo(xm + a, wBody); tr.lineTo(xm - a, wNut); tr.closePath();
+      const geo = new THREE.ShapeGeometry(tr); geo.rotateX(Math.PI / 2);
+      const m = new THREE.Mesh(geo, inlayMat); m.position.y = by + 0.03; g.add(m);
+      const lab = textSprite(String(n), n === 12 ? '#f2a33a' : '#cfc8dc', 1.9);
+      lab.position.set(xm, 0.3, bass * (this.halfWidth(x2) + 1.3)); g.add(lab);
+    });
+    for (let st = 1; st <= this.N; st++) {
+      const m = this.tuning[this.N - st];
+      const name = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'][m % 12];
+      const lab = textSprite(name, STRING_COLORS[(this.N - st) % STRING_COLORS.length], 1.5);
+      lab.position.set(-2.4, 1.2, this.stringZ(st, 0)); g.add(lab);
+    }
+    this.pickPlane = inst;
+  }
   /** junta as peças fixas por material: poucas chamadas de desenho = 3D leve no celular */
   _mergeStatic() {
     const g = this.static; g.updateMatrixWorld(true);
     const byMat = new Map(), keep = [];
+    const models = g.children.filter(o => o.userData.noMerge);
     g.traverse(o => {
       if (!o.isMesh) return;
+      let p = o; while (p && p !== g) { if (p.userData.noMerge) return; p = p.parent; }
       if (o.material.map) { keep.push(o); return; }
       const key = o.material.uuid;
       if (!byMat.has(key)) byMat.set(key, { mat: o.material, geos: [] });
@@ -328,7 +404,9 @@ export class Fretboard3D {
     keep.forEach(o => { o.updateMatrixWorld(true); const geo = o.geometry.clone().applyMatrix4(o.matrixWorld); merged.push(new THREE.Mesh(geo, o.material)); });
     const pick = this.pickPlane;
     sprites.forEach(sp => { sp.updateMatrixWorld(true); sp.getWorldPosition(sp.position); });
+    models.forEach(m => g.remove(m));
     this._clearGroup(g, true);
+    models.forEach(m => g.add(m));
     merged.forEach(m => g.add(m)); sprites.forEach(sp => g.add(sp));
     this.pickPlane = pick;
   }
