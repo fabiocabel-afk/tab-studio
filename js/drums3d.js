@@ -41,6 +41,7 @@ function loadDrums() {
 
 // tambores do modelo, do mais agudo ao mais grave
 const TOMS_3D = ['tt10', 'tt12', 'ft14', 'ft16'];
+const DRUMS_3D = new Set(['kick', 'snare', 'tt10', 'tt12', 'ft14', 'ft16']);   // tambores: casco + pele + ferragens vibram juntos
 const CYM_IDS = ['hihat', 'crash1', 'crash2', 'ride', 'china', 'splash'];
 
 export class Drums3D {
@@ -49,7 +50,7 @@ export class Drums3D {
     this.visible = true; this.dirty = true; this.view = 'player';
     this.hits = new Map(); this.preview = new Map();
     const r = this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-    r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5)); r.outputColorSpace = THREE.SRGBColorSpace;
+    r.setPixelRatio(Math.min(window.devicePixelRatio || 1, matchMedia('(pointer: coarse)').matches ? 1.25 : 1.5)); r.outputColorSpace = THREE.SRGBColorSpace;
     r.toneMapping = THREE.ACESFilmicToneMapping; r.toneMappingExposure = 1.2;
     const sc = this.scene = new THREE.Scene(); sc.background = new THREE.Color('#0d0c12');
     try { const pm = new THREE.PMREMGenerator(r); sc.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture; sc.environmentIntensity = 0.6; pm.dispose(); } catch (e) { /* sem reflexos */ }
@@ -84,14 +85,19 @@ export class Drums3D {
     model.traverse(o => {
       if (!o.isMesh) return;
       const tag = (o.parent && o.parent.name && !o.parent.isScene && o.parent.name !== 'Scene' ? o.parent.name : o.name).split('.')[0];
-      const m = /^(HEAD|CYM|PEDAL)_(.+)$/.exec(tag);
+      const m = /^(HEAD|CYM|PEDAL|SHELL|HW|RES|RESHEAD)_(.+)$/.exec(tag);
       const matName = o.material && o.material.name;
-      if (m) {
-        // peças que acendem: material próprio para poder brilhar sozinho
-        o.material = this._mat(matName); o.material.emissive = new THREE.Color('#000000');
+      const body = m && ['SHELL', 'HW', 'RES', 'RESHEAD'].includes(m[1]);
+      if (m && (!body || DRUMS_3D.has(m[2]))) {
         const id = m[1] === 'PEDAL' ? 'pedal_' + m[2] : m[2];
-        if (!this.parts.has(id)) this.parts.set(id, { meshes: [], kind: m[1] });
-        this.parts.get(id).meshes.push(o);
+        if (!this.parts.has(id)) this.parts.set(id, { meshes: [], lit: [], kind: m[1] === 'CYM' ? 'CYM' : m[1] === 'PEDAL' ? 'PEDAL' : 'HEAD' });
+        const part = this.parts.get(id);
+        if (body) { o.material = getShared(matName); part.meshes.push(o); }
+        else {
+          // peças que acendem: material próprio para poder brilhar sozinho
+          o.material = this._mat(matName); o.material.emissive = new THREE.Color('#000000');
+          part.meshes.push(o); part.lit.push(o);
+        }
       } else { o.material = getShared(matName); statics.push(o); }
     });
     // junta as peças fixas por material (poucas chamadas de desenho = leve no celular)
@@ -105,14 +111,15 @@ export class Drums3D {
     for (const { mat, geos } of byMat.values()) { const g = mergeGeometries(geos, false); if (g) this.kitGroup.add(new THREE.Mesh(g, mat)); }
     // peças animadas: ficam num "pivô" no centro delas (os pratos giram em volta do próprio centro)
     for (const [id, p] of this.parts) {
-      const box = new THREE.Box3(); p.meshes.forEach(o => box.expandByObject(o));
+      // centro e tamanho pela pele/prato (as ferragens não contam)
+      const box = new THREE.Box3(); p.lit.forEach(o => box.expandByObject(o));
       const center = box.getCenter(new THREE.Vector3());
       const pivot = new THREE.Group(); pivot.position.copy(center); this.kitGroup.add(pivot);
       // normal da pele/prato: média das normais da malha
       const nrm = new THREE.Vector3();
       for (const o of p.meshes) {
-        const geo = o.geometry.clone().applyMatrix4(o.matrixWorld); geo.computeVertexNormals();
-        const na = geo.attributes.normal; for (let i = 0; i < na.count; i += 3) nrm.add(new THREE.Vector3(na.getX(i), na.getY(i), na.getZ(i)));
+        const geo = o.geometry.clone().applyMatrix4(o.matrixWorld);
+        if (p.lit.includes(o)) { const tmp = geo.clone(); tmp.computeVertexNormals(); const na = tmp.attributes.normal; for (let i = 0; i < na.count; i += 3) nrm.add(new THREE.Vector3(na.getX(i), na.getY(i), na.getZ(i))); }
         o.geometry = geo; o.position.set(0, 0, 0); o.rotation.set(0, 0, 0); o.scale.set(1, 1, 1);
         o.geometry.translate(-center.x, -center.y, -center.z);
         pivot.add(o);
@@ -123,7 +130,7 @@ export class Drums3D {
       if (id === 'kick') nrm.set(0, 0, -1);
       const size = box.getSize(new THREE.Vector3());
       p.pivot = pivot; p.center = center; p.normal = nrm; p.radius = Math.max(size.x, size.z, id === 'kick' ? size.y : 0) / 2;
-      p.mats = p.meshes.map(o => o.material); p.base = p.mats.map(m => m.color.clone());
+      p.mats = p.lit.map(o => o.material); p.base = p.mats.map(m => m.color.clone());
     }
     // ponta da baqueta (uma por peça) e anel da prévia
     this.sticks = new Map(); this.rings = new Map();
@@ -238,17 +245,26 @@ export class Drums3D {
       }
       // pratos balançam; peles afundam um pouquinho
       if (p.kind === 'CYM') {
-        const t = h && !h.static ? (now - h.t0) / 1000 : 0;
-        const a = (h && !h.static ? h.vel : 0) * Math.exp(-t / 0.9);
+        let hh = h;
+        if (id === 'hihat') { const hp = this.hits.get('hihat:p'); if (hp && !hp.static && (!hh || hp.t0 > hh.t0)) hh = hp; }
+        const t = hh && !hh.static ? (now - hh.t0) / 1000 : 0;
+        const a = (hh && !hh.static ? 0.55 + 0.45 * hh.vel : 0) * Math.exp(-t / 0.75);
         if (a > 0.002 || p._mov) {
-          p.pivot.rotation.x = a * 0.16 * Math.sin(t * 15); p.pivot.rotation.z = a * 0.1 * Math.sin(t * 11 + 1);
+          // a borda perto do baterista desce primeiro (como uma baquetada de verdade), depois balança
+          p.pivot.rotation.x = -a * 0.3 * Math.sin(t * 16 + 0.4); p.pivot.rotation.z = a * 0.17 * Math.sin(t * 11 + 1);
           const hp = this.hits.get('hihat:p');
           p.pivot.position.y = p.center.y - (id === 'hihat' && hp && !hp.static ? 0.012 * Math.exp(-(now - hp.t0) / 120) : 0);
           p._mov = a > 0.002; anim = true;
         }
       } else if (p.kind === 'HEAD') {
-        const dip = lv * 0.006;
-        p.pivot.position.copy(p.center).addScaledVector(p.normal, -dip);
+        // tambor inteiro: encolhe/cresce rápido e dá um "pulinho" na direção da pele (exagerado de propósito)
+        const t = h && !h.static ? now - h.t0 : 1e9;
+        if (t < 500 || p._mov) {
+          const e = t < 500 ? (0.55 + 0.45 * h.vel) * Math.exp(-t / 140) : 0, osc = Math.sin(t * 0.07);
+          p.pivot.scale.setScalar(1 - 0.12 * e * osc);
+          p.pivot.position.copy(p.center).addScaledVector(p.normal, (id === 'kick' ? 0.015 : 0.025) * e * Math.abs(osc));
+          p._mov = e > 0.003; anim = true;
+        }
       }
       // baqueta e prévia
       const st = this.sticks.get(id), rg = this.rings.get(id);
@@ -268,7 +284,7 @@ export class Drums3D {
       if (this._n >= 45) {
         const avg = this._acc / this._n; this._acc = 0; this._n = 0;
         const pr = this.renderer.getPixelRatio();
-        if (avg > 34 && pr > 0.6) { this.renderer.setPixelRatio(Math.max(0.6, pr * 0.75)); this.renderer.setSize(this._w, this._h, false); }
+        if (avg > 52 && pr > 0.6) { this.renderer.setPixelRatio(Math.max(0.6, pr * 0.75)); this.renderer.setSize(this._w, this._h, false); }
       }
     }
     this._lastR = now;
@@ -277,7 +293,7 @@ export class Drums3D {
     if (!this.visible) return;
     const anim = this._update(now);
     this.controls.update();
-    if (anim || this.dirty) { this.renderer.render(this.scene, this.camera); this.dirty = false; this._adapt(now); }
+    if (this.dirty || (anim && now - (this._lf || 0) >= 31)) { this.renderer.render(this.scene, this.camera); this.dirty = false; this._lf = now; this._adapt(now); }
     requestAnimationFrame(this._loop);
   }
 }

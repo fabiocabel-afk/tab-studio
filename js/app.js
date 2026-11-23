@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '1.9.0';
+  const APP_VERSION = '1.9.1';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Store = window.TabStore;
@@ -1166,6 +1166,21 @@
     if (!t) return [];
     return neckable(t) ? ['neck3d', 'neck2d', 'keys3d', 'keys2d'] : ['keys3d', 'keys2d'];
   }
+  /* libera as telas 3D que não estão à vista: cada uma segura memória da placa de vídeo,
+     e no celular isso deixava a partitura em branco durante a música */
+  S.vizRecent = [];
+  function releaseViz(keep) {
+    // mantém vivas só as 2 telas 3D usadas por último (troca rápida entre, por ex., guitarra e bateria)
+    if (keep) S.vizRecent = [keep].concat(S.vizRecent.filter(k => k !== keep)).slice(0, 2); else S.vizRecent = [];
+    for (const k of Object.keys(S.viz)) {
+      if (S.vizRecent.includes(k) || !k.endsWith('3d')) continue;
+      const inst = S.viz[k];
+      try { inst.dispose(); if (inst.renderer) inst.renderer.forceContextLoss(); } catch (e) { /* segue */ }
+      const old = $(VIZ_MODS[k].canvas), fresh = old.cloneNode(false); fresh.hidden = true; old.replaceWith(fresh);
+      delete S.viz[k]; S.vizLoading[k] = null;
+      if (S.fb === inst) S.fb = null;
+    }
+  }
   function ensureViz(mode) {
     if (S.viz[mode]) return Promise.resolve(S.viz[mode]);
     if (!S.vizLoading[mode]) {
@@ -1237,6 +1252,7 @@
     if (mode.startsWith('neck')) { viewItems.push(['', '──────────', true, '─']); viewItems.push(['__flip', (prefs.flip ? '✓ ' : '') + 'Cordas invertidas', false, (prefs.flip ? '✓ ' : '') + 'Invertidas']); }
     fillSelect($('selVizView'), viewItems, view);
     Object.entries(VIZ_MODS).forEach(([k, X]) => { $(X.canvas).hidden = k !== mode; if (k !== mode && S.viz[k]) S.viz[k].setVisible(false); });
+    releaseViz(mode);
     $('p3dMsg').textContent = S.viz[mode] ? '' : 'Carregando…';
     const inst = await ensureViz(mode);
     if (S.vizMode !== mode) return;
@@ -1280,7 +1296,7 @@
     const p = $('panel3d');
     const on = force === undefined ? p.hidden : force;
     p.hidden = !on; $('btn3d').classList.toggle('on', on);
-    if (!on) { Object.values(S.viz).forEach(v => v.setVisible(false)); return; }
+    if (!on) { Object.values(S.viz).forEach(v => v.setVisible(false)); releaseViz(null); S.vizMode = null; return; }
     sync3d();
   }
   function show3dIdle() {

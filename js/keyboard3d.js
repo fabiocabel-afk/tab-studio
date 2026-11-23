@@ -23,7 +23,7 @@ export class Keyboard3D {
     this.visible = true; this.dirty = true; this.view = 'player'; this.follow = true; this.focusX = keyX(60);
     this.hands = new HandTracker();
     const r = this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-    r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5)); r.outputColorSpace = THREE.SRGBColorSpace;
+    r.setPixelRatio(Math.min(window.devicePixelRatio || 1, matchMedia('(pointer: coarse)').matches ? 1.25 : 1.5)); r.outputColorSpace = THREE.SRGBColorSpace;
     r.toneMapping = THREE.ACESFilmicToneMapping; r.toneMappingExposure = 1.25;
     const sc = this.scene = new THREE.Scene(); sc.background = new THREE.Color('#0d0c12');
     // reflexos para metais (ponte, knobs, captadores) brilharem
@@ -184,7 +184,7 @@ export class Keyboard3D {
       if (this._n >= 45) {
         const avg = this._acc / this._n; this._acc = 0; this._n = 0;
         const pr = this.renderer.getPixelRatio();
-        if (avg > 34 && pr > 0.6) { this.renderer.setPixelRatio(Math.max(0.6, pr * 0.75)); this.renderer.setSize(this._w || this.canvas.clientWidth, this._h || this.canvas.clientHeight, false); }
+        if (avg > 52 && pr > 0.6) { this.renderer.setPixelRatio(Math.max(0.6, pr * 0.75)); this.renderer.setSize(this._w || this.canvas.clientWidth, this._h || this.canvas.clientHeight, false); }
       }
     }
     this._lastR = now;
@@ -193,7 +193,7 @@ export class Keyboard3D {
     if (!this.visible) return;
     const anim = this._update(now);
     this.controls.update();
-    if (anim || this.dirty) { this.renderer.render(this.scene, this.camera); this.dirty = false; this._adapt(now); }
+    if (this.dirty || (anim && now - (this._lf || 0) >= 31)) { this.renderer.render(this.scene, this.camera); this.dirty = false; this._lf = now; this._adapt(now); }
     requestAnimationFrame(this._loop);
   }
 }

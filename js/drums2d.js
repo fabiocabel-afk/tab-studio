@@ -84,6 +84,17 @@ export class Drums2D {
     return h.vel * Math.exp(-d / (cym ? 520 : 240));
   }
 
+  /** vibração da batida: a peça encolhe e cresce rápido (≈10 vezes por segundo) e para em ~0,4 s.
+   *  Com batidas seguidas ela fica "tremendo", então dá para ver o que está tocando mesmo em música rápida. */
+  pulse(key, now, amp) {
+    const h = this.hits.get(key); if (!h || h.static) return 1;
+    const t = now - h.t0; if (t < 0 || t > 450) return 1;
+    return 1 - (amp || 0.09) * (0.5 + 0.5 * h.vel) * Math.exp(-t / 150) * Math.sin(t * 0.066);
+  }
+  _scaled(x, y, k, draw) {
+    if (k === 1) { draw(); return; }
+    const g = this.g; g.save(); g.translate(x, y); g.scale(k, k); g.translate(-x, -y); draw(); g.restore();
+  }
   /* ---------------- vista de cima ---------------- */
   /* escala: em painel largo e baixo o kit se espalha na horizontal (até 1,7×), para não ficar miúdo */
   _fit() {
@@ -114,7 +125,8 @@ export class Drums2D {
     g.fillStyle = 'rgba(13,12,18,.72)'; g.beginPath(); g.roundRect(x - w / 2, y - 1, w, size + 4, 4); g.fill();
     g.fillStyle = on ? '#ffffff' : '#a9a3b8'; g.fillText(text, x, y + 1);
   }
-  _drum(p, x, y, r, now) {
+  _drum(p, x, y, r, now) { this._scaled(x, y, this.pulse(p.id, now), () => this._drum0(p, x, y, r, now)); }
+  _drum0(p, x, y, r, now) {
     const g = this.g, key = p.id, lv = this.level(key, now), h = this.hits.get(key);
     const col = h ? LIMB_COLORS[h.limb] : LIMB_COLORS.hand;
     this._glow(x, y, r, col, lv);
@@ -136,12 +148,16 @@ export class Drums2D {
     if (this.preview.has(key) && lv < 0.3) this._ring(x, y + r * 0.25, Math.max(4, r * 0.2), LIMB_COLORS[this.preview.get(key)]);
   }
   _cymbal(p, x, y, r, now) {
+    const k = Math.min(this.pulse(p.id, now, 0.07), p.id === 'hihat' ? this.pulse('hihat:p', now, 0.07) : 1);
+    this._scaled(x, y, k, () => this._cymbal0(p, x, y, r, now));
+  }
+  _cymbal0(p, x, y, r, now) {
     const g = this.g, key = p.id, lv = this.level(key, now), h = this.hits.get(key);
     const col = h ? LIMB_COLORS[h.limb] : LIMB_COLORS.hand;
     this._glow(x, y, r, col, lv * 0.8);
     // balanço: a elipse oscila quando o prato é batido
     const t = h && !h.static ? (now - h.t0) / 1000 : 0;
-    const wob = lv * 0.09 * Math.sin(t * 28), ang = lv * 0.12 * Math.sin(t * 17);
+    const wob = lv * 0.13 * Math.sin(t * 28), ang = lv * 0.16 * Math.sin(t * 17);
     g.save(); g.translate(x, y); g.rotate(ang); g.scale(1 + wob, 1 - wob);
     const gr = g.createRadialGradient(-r * 0.25, -r * 0.25, r * 0.05, 0, 0, r);
     gr.addColorStop(0, '#f1d38a'); gr.addColorStop(0.55, '#c99a3c'); gr.addColorStop(1, '#8c6420');
@@ -175,7 +191,8 @@ export class Drums2D {
     const kp = this.pos.get('kick');
     if (kp) {
       const lv = this.level('kick', now), h = this.hits.get('kick');
-      const w = kp.r * 2 * s, d = kp.r * 1.25 * s, x = X(kp.x) - w / 2, y = Y(kp.y) - d / 2;
+      const kk = this.pulse('kick', now, 0.08);
+      const w = kp.r * 2 * s * kk, d = kp.r * 1.25 * s * kk, x = X(kp.x) - w / 2, y = Y(kp.y) - d / 2;
       this._glow(X(kp.x), Y(kp.y), kp.r * s * 1.05, LIMB_COLORS.foot, lv);
       g.fillStyle = SHELL; g.fillRect(x, y, w, d);
       const sh = g.createLinearGradient(x, 0, x + w, 0); sh.addColorStop(0, 'rgba(0,0,0,.45)'); sh.addColorStop(0.5, 'rgba(255,255,255,.08)'); sh.addColorStop(1, 'rgba(0,0,0,.45)');
@@ -213,7 +230,8 @@ export class Drums2D {
     // nomes por último, com fundo, para não sumirem embaixo dos pratos
     for (const [t, x, y, on] of labels) this._label(t, x, y, on, fs);
   }
-  _small(p, x, y, r, now) {
+  _small(p, x, y, r, now) { this._scaled(x, y, this.pulse(p.id, now, 0.12), () => this._small0(p, x, y, r, now)); }
+  _small0(p, x, y, r, now) {
     const g = this.g, lv = this.level(p.id, now), h = this.hits.get(p.id), col = LIMB_COLORS.hand;
     this._glow(x, y, r, col, lv);
     if (p.id === 'cowbell') { g.fillStyle = '#9ea1aa'; g.beginPath(); g.moveTo(x - r, y - r * 0.6); g.lineTo(x + r, y - r * 0.9); g.lineTo(x + r, y + r * 0.9); g.lineTo(x - r, y + r * 0.6); g.closePath(); g.fill(); }
@@ -236,7 +254,7 @@ export class Drums2D {
       // alvo na linha de batida
       const lv = Math.max(this.level(id, now), id === 'hihat' ? this.level('hihat:p', now) : 0);
       const h = this.hits.get(id) || this.hits.get(id + ':p');
-      const cx = x + lw / 2, rr = Math.min(lw * 0.36, 16);
+      const cx = x + lw / 2, rr = Math.min(lw * 0.36, 16) * Math.min(this.pulse(id, now, 0.16), id === 'hihat' ? this.pulse('hihat:p', now, 0.16) : 1);
       if (lv > 0.01) { this._glow(cx, hitY, rr, h ? LIMB_COLORS[h.limb] : LIMB_COLORS.hand, lv); }
       g.strokeStyle = p && p.cymbal ? '#c99a3c' : '#d8d1c0'; g.lineWidth = 2;
       if (p && p.cymbal) { g.beginPath(); g.arc(cx, hitY, rr, 0, Math.PI * 2); g.stroke(); }

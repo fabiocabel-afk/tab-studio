@@ -99,7 +99,7 @@ export class Fretboard3D {
     this.camPreset = 'player';
 
     const r = this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'high-performance' });
-    r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+    r.setPixelRatio(Math.min(window.devicePixelRatio || 1, matchMedia('(pointer: coarse)').matches ? 1.25 : 1.5));
     r.outputColorSpace = THREE.SRGBColorSpace;
     r.toneMapping = THREE.ACESFilmicToneMapping; r.toneMappingExposure = 1.1;
 
@@ -720,7 +720,7 @@ export class Fretboard3D {
       if (this._n >= 45) {
         const avg = this._acc / this._n; this._acc = 0; this._n = 0;
         const pr = this.renderer.getPixelRatio();
-        if (avg > 34 && pr > 0.6) { this.renderer.setPixelRatio(Math.max(0.6, pr * 0.75)); this.renderer.setSize(this._w || this.canvas.clientWidth, this._h || this.canvas.clientHeight, false); }
+        if (avg > 52 && pr > 0.6) { this.renderer.setPixelRatio(Math.max(0.6, pr * 0.75)); this.renderer.setSize(this._w || this.canvas.clientWidth, this._h || this.canvas.clientHeight, false); }
       }
     }
     this._lastR = now;
@@ -730,7 +730,7 @@ export class Fretboard3D {
     const animating = this._update(now);
     this._follow();
     this.controls.update();
-    if (animating || this.dirty) { this.renderer.render(this.scene, this.camera); this.dirty = false; this._adapt(now); }
+    if (this.dirty || (animating && now - (this._lf || 0) >= 31)) { this.renderer.render(this.scene, this.camera); this.dirty = false; this._lf = now; this._adapt(now); }
     requestAnimationFrame(this._loop);
   }
   dispose() { this.visible = false; this.ro.disconnect(); this.controls.dispose(); this.renderer.dispose(); }
