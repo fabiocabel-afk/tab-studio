@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '1.7.1';
+  const APP_VERSION = '1.7.2';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Store = window.TabStore;
@@ -165,6 +165,7 @@
   /* seleção de trilha (barra de trilhas, painel, 3D): a principal manda no 3D */
   function selectTrack(i, additive) {
     if (!S.score || i < 0 || i >= S.score.tracks.length) return;
+    S.vizPick = null; // clicou numa trilha: instrumento volta à sugestão (cordas ou teclas)
     if (S.edit) { setEditTrack(i); return; }
     if (additive) {
       if (S.tracks.includes(i)) {
@@ -1338,7 +1339,16 @@
 
   /* service worker */
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-    navigator.serviceWorker.register('sw.js').catch(() => { /* hospedagem sem suporte: segue sem offline */ });
+    const hadSW = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.register('sw.js').then(r => { try { r.update(); } catch (e) { /* segue */ } }).catch(() => { /* hospedagem sem suporte: segue sem offline */ });
+    // versão nova instalada: atualiza na hora (se não houver trabalho sem salvar nem música tocando)
+    let reloading = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!hadSW || reloading) return;
+      const go = async () => { reloading = true; if (S.score && S.dirty) { clearTimeout(draftT); try { await Store.set('draft', { json: Ops.snapshot(S.score), name: S.fileName, time: Date.now(), v: APP_VERSION }); } catch (e) { /* segue */ } } location.reload(); };
+      if (!S.dirty && !S.playing) { go(); return; }
+      showMsg('Nova versão do Tab Studio', 'Uma versão nova foi baixada. Atualizar agora? (sua música fica guardada no rascunho)', [{ label: 'Depois', value: 'no' }, { label: 'Atualizar', value: 'ok', primary: true }]).then(v => { if (v === 'ok') go(); });
+    });
   }
 
   checkDraft();
