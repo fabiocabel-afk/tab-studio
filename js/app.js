@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '1.9.1';
+  const APP_VERSION = '1.9.2';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Store = window.TabStore;
@@ -147,10 +147,24 @@
     if (i < 0) i = score.tracks.findIndex(t => isStringed(t));
     return i >= 0 ? i : 0;
   }
+  /* Modo "só tablatura" com uma bateria que não tem tablatura (comum em GP7/GP8):
+     o alphaTab não tem o que desenhar e quebra ("reading 'staves'"), deixando a página em branco.
+     Nesse caso a bateria aparece na notação de bateria (cada pauta como foi gravada no arquivo). */
+  function applyStaveProfile() {
+    const [prof, rhythm] = STAVES[staveOf(prefs.stave)];
+    let want = prof;
+    if (prof === 'Tab' && S.tracks.some(i => { const t = S.score.tracks[i]; return t && t.staves.some(st => st.isPercussion && !st.showTablature); })) want = 'Default';
+    const sp = at.StaveProfile[want], rm = at.TabRhythmMode[rhythm];
+    if (api.settings.display.staveProfile !== sp || api.settings.notation.rhythmMode !== rm) {
+      api.settings.display.staveProfile = sp; api.settings.notation.rhythmMode = rm; api.updateSettings();
+    }
+    S.staveOverride = want !== prof;
+  }
   function render() {
     if (!S.score) return;
     S.tracks = S.tracks.filter(i => i < S.score.tracks.length);
     if (!S.tracks.length) S.tracks = [0];
+    applyStaveProfile();
     if (api.score === S.score) api.renderTracks(S.tracks.map(i => S.score.tracks[i]));
     else {
       // partitura nova (arquivo ou edição): o trecho destacado apontava para a antiga
