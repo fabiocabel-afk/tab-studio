@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '1.7.3';
+  const APP_VERSION = '1.8.0';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Store = window.TabStore;
@@ -377,7 +377,7 @@
     const beats = e.activeBeats.filter(b => b.voice.bar.staff.track.index === S.threeTrack);
     if (!beats.length) return;
     let dur = 0; const notes = [], up = [];
-    const look = S.vizMode && S.vizMode.startsWith('keys') ? 3500 : 2500;
+    const look = S.vizMode && S.vizMode.startsWith('keys') ? 3500 : S.vizMode && S.vizMode.startsWith('drum') ? 2600 : 2500;
     for (const b of beats) {
       dur = Math.max(dur, b.playbackDuration * msPerTick(b.voice.bar.index));
       for (const n of b.notes) notes.push(noteFor3d(n));
@@ -402,9 +402,11 @@
   /* próximas notas (para o 2D e o teclado se posicionarem antes) */
   function upcomingNotes(beat, ms, out) {
     let b = beat.nextBeat, acc = 0, guard = 0;
-    while (b && acc < ms && guard++ < 96) {
-      for (const n of b.notes) out.push(noteFor3d(n));
-      acc += b.playbackDuration * msPerTick(b.voice.bar.index);
+    let at = beat.playbackDuration * msPerTick(beat.voice.bar.index); // quando cada nota futura vai soar (ms a partir de agora)
+    while (b && acc < ms && guard++ < 160) {
+      for (const n of b.notes) { const o = noteFor3d(n); o.at = at; out.push(o); }
+      const d = b.playbackDuration * msPerTick(b.voice.bar.index);
+      acc += d; at += d;
       b = b.nextBeat;
     }
     return out;
@@ -413,7 +415,21 @@
     const bpm = Ops.getTempoAt(S.score, barIndex) || 120;
     return 60000 / (bpm * TICKS_PER_QUARTER) / (api.playbackSpeed || 1);
   }
+  /* bateria: número General MIDI da peça (36 = bumbo, 38 = caixa, 42 = chimbal…) */
+  function drumMidi(n) {
+    const tr = n.beat.voice.bar.staff.track;
+    const a = tr.percussionArticulations && tr.percussionArticulations[n.percussionArticulation];
+    return a ? a.outputMidiNumber : (n.percussionArticulation >= 0 ? n.percussionArticulation : n.realValue);
+  }
+  function usedDrums(t) {
+    const set = new Set();
+    for (const st of t.staves) for (const bar of st.bars) for (const v of bar.voices) for (const b of v.beats) for (const n of b.notes) set.add(drumMidi(n));
+    return [...set];
+  }
   function noteFor3d(n) {
+    if (n.beat.voice.bar.staff.isPercussion || n.beat.voice.bar.staff.track.playbackInfo.primaryChannel === 9) {
+      return { drum: drumMidi(n), dyn: n.dynamics, ghost: !!n.isGhost, accent: n.accentuated || 0, tie: n.isTieDestination };
+    }
     let slideTo = null;
     if (n.slideTarget) slideTo = n.slideTarget.fret;
     else if (n.slideOutType === at.model.SlideOutType.OutUp) slideTo = n.fret + 4;
@@ -1124,10 +1140,11 @@
     neck3d: { file: './fretboard3d.js', cls: 'Fretboard3D', canvas: 'canvas3d', label: 'Braço 3D', views: [['player', 'Visão do músico', 'Músico'], ['top', 'Topo', 'Topo'], ['full', 'Braço inteiro', 'Inteiro']] },
     neck2d: { file: './fretboard2d.js', cls: 'Fretboard2D', canvas: 'canvasN2d', label: 'Braço 2D', views: [['focus7', 'Foco 7 casas', '7 casas'], ['focus10', 'Foco 10 casas', '10 casas'], ['full', 'Braço inteiro', 'Inteiro']] },
     keys3d: { file: './keyboard3d.js', cls: 'Keyboard3D', canvas: 'canvasK3d', label: 'Teclado 3D', views: [['player', 'Visão do músico', 'Músico'], ['top', 'Topo', 'Topo'], ['full', 'Teclado inteiro', 'Inteiro']] },
-    keys2d: { file: './keyboard2d.js', cls: 'Keyboard2D', canvas: 'canvasK2d', label: 'Teclado 2D', views: [['range', 'Faixa tocada', 'Faixa'], ['hands', 'Duas mãos', '2 mãos'], ['full', 'Teclado inteiro', 'Inteiro']] }
+    keys2d: { file: './keyboard2d.js', cls: 'Keyboard2D', canvas: 'canvasK2d', label: 'Teclado 2D', views: [['range', 'Faixa tocada', 'Faixa'], ['hands', 'Duas mãos', '2 mãos'], ['full', 'Teclado inteiro', 'Inteiro']] },
+    drum2d: { file: './drums2d.js', cls: 'Drums2D', canvas: 'canvasD2d', label: 'Bateria 2D', views: [['kit', 'Bateria vista de cima', 'De cima'], ['lanes', 'Pistas (notas descendo)', 'Pistas']] }
   };
   S.viz = {}; S.vizLoading = {}; S.vizMode = null;
-  prefs.vizViews = Object.assign({ neck3d: 'player', neck2d: 'focus7', keys3d: 'player', keys2d: 'range' }, prefs.vizViews || {});
+  prefs.vizViews = Object.assign({ neck3d: 'player', neck2d: 'focus7', keys3d: 'player', keys2d: 'range', drum2d: 'kit' }, prefs.vizViews || {});
   if (!prefs.vizNeck) prefs.vizNeck = 'neck3d';
   if (!prefs.vizOther) prefs.vizOther = 'keys3d';
   /* 3D/2D guardado separado para cordas e teclas; o tipo (cordas/teclas) segue a trilha escolhida */
@@ -1144,7 +1161,8 @@
     return (p >= 24 && p <= 43) || (p >= 104 && p <= 107);
   }
   function modesFor(t) {
-    if (!t || isPerc(t)) return [];
+    if (t && isPerc(t)) return ['drum2d'];
+    if (!t) return [];
     return neckable(t) ? ['neck3d', 'neck2d', 'keys3d', 'keys2d'] : ['keys3d', 'keys2d'];
   }
   function ensureViz(mode) {
@@ -1201,12 +1219,16 @@
     // cordas → braço; teclas, sopros, voz etc. → teclado. Só muda se a pessoa escolheu outro tipo para ESTA trilha
     if (S.vizPick && (S.vizPick.track !== S.primary || S.vizPick.score !== S.score)) S.vizPick = null; // trocou de trilha: volta ao tipo certo
     const pick = S.vizPick ? S.vizPick.mode : null;
-    let mode = pick || (stringedTrack ? 'neck' + prefs.dimNeck : 'keys' + prefs.dimKeys);
+    const drumTrack = !!(t && isPerc(t));
+    let mode = pick || (drumTrack ? 'drum' + (prefs.dimDrum || '2d') : stringedTrack ? 'neck' + prefs.dimNeck : 'keys' + prefs.dimKeys);
     if (!modes.includes(mode)) mode = modes[0];
     S.vizMode = mode; S.threeTrack = t ? S.primary : -1;
     // três listas: cordas/teclas · 3D/2D · visão
-    const kinds = modes.some(m => m.startsWith('neck')) ? [['neck', 'Cordas', false, 'Cordas', 'Cordas'], ['keys', 'Teclas', false, 'Teclas', 'Teclas']] : [['keys', 'Teclas']];
+    const kinds = drumTrack ? [['drum', 'Bateria', false, 'Bateria', 'Bateria']]
+      : modes.some(m => m.startsWith('neck')) ? [['neck', 'Cordas', false, 'Cordas', 'Cordas'], ['keys', 'Teclas', false, 'Teclas', 'Teclas']] : [['keys', 'Teclas']];
     fillSelect($('selVizKind'), kinds, mode.slice(0, 4));
+    // 3D/2D: só o que existe para este tipo (bateria 3D ainda vem)
+    for (const o of $('selVizDim').options) o.disabled = !modes.includes(mode.slice(0, 4) + o.value);
     $('selVizDim').value = mode.slice(4);
     const M = VIZ_MODS[mode];
     const view = M.views.some(v => v[0] === prefs.vizViews[mode]) ? prefs.vizViews[mode] : M.views[0][0];
@@ -1224,6 +1246,7 @@
     if (inst._tsKey !== key) {
       inst._tsKey = key;
       if (mode.startsWith('neck')) { inst.flip = prefs.flip; inst.setInstrument(t ? trackTuning(t) : [64, 59, 55, 50, 45, 40]); }
+      else if (mode.startsWith('drum')) inst.setTrack({ drums: t ? usedDrums(t) : [] });
       else inst.setTrack({ twoStaves: t ? t.staves.length > 1 : false });
     }
     if (inst._view !== view) { inst._view = view; inst.setCamera(view); }
@@ -1232,8 +1255,8 @@
   function setVizMode(v) {
     if (!VIZ_MODS[v]) return;
     const t = S.score && S.score.tracks[S.primary];
-    const kind = v.slice(0, 4), natural = (!t || neckable(t)) ? 'neck' : 'keys';
-    if (kind === 'neck') prefs.dimNeck = v.slice(4); else prefs.dimKeys = v.slice(4);
+    const kind = v.slice(0, 4), natural = t && isPerc(t) ? 'drum' : (!t || neckable(t)) ? 'neck' : 'keys';
+    if (kind === 'neck') prefs.dimNeck = v.slice(4); else if (kind === 'drum') prefs.dimDrum = v.slice(4); else prefs.dimKeys = v.slice(4);
     S.vizPick = kind !== natural ? { track: S.primary, score: S.score, mode: v } : null;
     savePrefs(); sync3d();
   }
