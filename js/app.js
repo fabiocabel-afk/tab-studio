@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '1.1.0';
+  const APP_VERSION = '1.2.0';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Store = window.TabStore;
@@ -22,7 +22,7 @@
     undo: [], redo: [], dirty: false, clip: null, saveHandle: null,
     fretBuf: '', fretT: 0,
     playerReady: false, playing: false, endTime: 0, seeking: false,
-    mix: {}, threeTrack: 0, primary: 0, fb: null, fbLoading: null, lastTick: 0,
+    mix: {}, threeTrack: 0, primary: 0, fb: null, lastTick: 0,
     pendingScroll: null
   };
 
@@ -296,16 +296,28 @@
     updateEditor(); drawCursor();
   });
   api.activeBeatsChanged.on(e => {
-    if (!S.fb || !S.playing) return;
+    if (!S.fb || !S.playing || S.threeTrack < 0) return;
     const beats = e.activeBeats.filter(b => b.voice.bar.staff.track.index === S.threeTrack);
     if (!beats.length) return;
-    let dur = 0; const notes = [];
+    let dur = 0; const notes = [], up = [];
+    const look = S.vizMode && S.vizMode.startsWith('keys') ? 3500 : 2500;
     for (const b of beats) {
       dur = Math.max(dur, b.playbackDuration * msPerTick(b.voice.bar.index));
       for (const n of b.notes) notes.push(noteFor3d(n));
+      upcomingNotes(b, look, up);
     }
-    S.fb.play(notes, dur);
+    S.fb.play(notes, dur, up);
   });
+  /* próximas notas (para o 2D e o teclado se posicionarem antes) */
+  function upcomingNotes(beat, ms, out) {
+    let b = beat.nextBeat, acc = 0, guard = 0;
+    while (b && acc < ms && guard++ < 96) {
+      for (const n of b.notes) out.push(noteFor3d(n));
+      acc += b.playbackDuration * msPerTick(b.voice.bar.index);
+      b = b.nextBeat;
+    }
+    return out;
+  }
   function msPerTick(barIndex) {
     const bpm = Ops.getTempoAt(S.score, barIndex) || 120;
     return 60000 / (bpm * TICKS_PER_QUARTER) / (api.playbackSpeed || 1);
@@ -319,7 +331,10 @@
       string: n.string, fret: n.fret,
       bend: n.hasBend && n.bendPoints ? n.bendPoints.map(p => ({ offset: p.offset, value: p.value })) : null,
       vibrato: n.vibrato || (n.beat.vibrato || 0),
-      slideTo, dead: n.isDead, tie: n.isTieDestination, harmonic: !!n.harmonicType
+      slideTo, dead: n.isDead, tie: n.isTieDestination, harmonic: !!n.harmonicType,
+      pitch: n.realValue,
+      // piano com duas pautas: sol = mão direita, fá = mão esquerda
+      hand: n.beat.voice.bar.staff.track.staves.length > 1 ? (n.beat.voice.bar.staff.index === 0 ? 'R' : 'L') : null
     };
   }
 
@@ -689,7 +704,7 @@
     if (ctrl) return;
     if (/^[0-9]$/.test(k)) {
       e.preventDefault();
-      const now = Date.now(); let v = +k, merge = false;
+      const now = e.timeStamp || Date.now(); let v = +k, merge = false;
       if (S.fretBuf && now - S.fretT < 900 && +(S.fretBuf + k) <= 30) { v = +(S.fretBuf + k); S.fretBuf = ''; merge = true; }
       else S.fretBuf = k;
       S.fretT = now;
@@ -914,44 +929,106 @@
     showMsg('Sobre o Tab Studio', 'Versão ' + APP_VERSION + '.<br>Leitura, reprodução, impressão e edição de tablaturas e partituras no navegador, funcionando offline.<br><br>Formatos de leitura: Guitar Pro 3, 4, 5 (.gp3/.gp4/.gp5), 6 (.gpx), 7 e 8 (.gp), MusicXML, Capella e alphaTex.<br>Formato de gravação: Guitar Pro 7/8 (.gp) e MIDI.<br><br><span class="muted">Motor de notação: alphaTab (MPL-2.0). Fonte musical: Bravura (SIL OFL). Sons: SoundFont Sonivox. 3D: three.js (MIT).</span>');
   }
 
-  /* ---------------- 3D ---------------- */
-  /* o 3D mostra sempre a trilha principal selecionada */
-  function sync3d() {
-    const t = S.score && S.score.tracks[S.primary];
-    $('p3dTrack').textContent = t ? (t.name || ('Trilha ' + (t.index + 1))) : '';
-    if (!t) return;
-    if (isStringed(t)) {
-      S.threeTrack = S.primary;
-      $('p3dMsg').textContent = '';
-      $('canvas3d').classList.remove('dim');
-      if (S.fb) {
-        const key = S.primary + '|' + trackTuning(t).join(',');
-        if (S.fbKey !== key) { S.fbKey = key; S.fb.setInstrument(trackTuning(t)); }
-        show3dIdle();
-      }
-    } else {
-      S.threeTrack = -1;
-      $('p3dMsg').textContent = 'Esta trilha não é de cordas — o braço 3D mostra guitarra, violão e baixo.';
-      $('canvas3d').classList.add('dim');
-      if (S.fb) { S.fb.stopAll(); S.fb.showStatic([], null); }
-    }
+  /* ---------------- instrumento na tela (braço/teclado, 2D/3D) ---------------- */
+  const VIZ_MODS = {
+    neck3d: { file: './fretboard3d.js', cls: 'Fretboard3D', canvas: 'canvas3d', label: 'Braço 3D', views: [['player', 'Visão do músico'], ['top', 'Topo'], ['full', 'Braço inteiro']] },
+    neck2d: { file: './fretboard2d.js', cls: 'Fretboard2D', canvas: 'canvasN2d', label: 'Braço 2D', views: [['focus7', 'Foco 7 casas'], ['focus10', 'Foco 10 casas'], ['full', 'Braço inteiro']] },
+    keys3d: { file: './keyboard3d.js', cls: 'Keyboard3D', canvas: 'canvasK3d', label: 'Teclado 3D', views: [['player', 'Visão do músico'], ['top', 'Topo'], ['full', 'Teclado inteiro']] },
+    keys2d: { file: './keyboard2d.js', cls: 'Keyboard2D', canvas: 'canvasK2d', label: 'Teclado 2D', views: [['range', 'Faixa tocada'], ['hands', 'Duas mãos'], ['full', 'Teclado inteiro']] }
+  };
+  S.viz = {}; S.vizLoading = {}; S.vizMode = null;
+  prefs.vizViews = Object.assign({ neck3d: 'player', neck2d: 'focus7', keys3d: 'player', keys2d: 'range' }, prefs.vizViews || {});
+  if (!prefs.vizNeck) prefs.vizNeck = 'neck3d';
+  if (!prefs.vizOther) prefs.vizOther = 'keys3d';
+  function isPerc(t) { return t.staves[0].isPercussion || t.playbackInfo.primaryChannel === 9; }
+  /* braço só para instrumentos de traste (guitarra, violão, baixo, banjo…); GP5 dá afinação até para teclado */
+  function neckable(t) {
+    if (!isStringed(t)) return false;
+    const p = t.playbackInfo.program;
+    if ((p >= 24 && p <= 39) || (p >= 104 && p <= 107)) return true;
+    return p > 23 && t.staves[0].showTablature !== false;
   }
+  function modesFor(t) {
+    if (!t || isPerc(t)) return [];
+    return neckable(t) ? ['neck3d', 'neck2d', 'keys3d', 'keys2d'] : ['keys3d', 'keys2d'];
+  }
+  function ensureViz(mode) {
+    if (S.viz[mode]) return Promise.resolve(S.viz[mode]);
+    if (!S.vizLoading[mode]) {
+      const M = VIZ_MODS[mode];
+      S.vizLoading[mode] = import(M.file).then(mod => {
+        const inst = new mod[M.cls]($(M.canvas), { onPick: on3dPick, flip: prefs.flip });
+        S.viz[mode] = inst;
+        if (mode === 'neck3d') window.__fb = inst;
+        return inst;
+      }).catch(e => { S.vizLoading[mode] = null; throw e; });
+    }
+    return S.vizLoading[mode];
+  }
+  function fillSelect(sel, items, value) {
+    sel.innerHTML = '';
+    items.forEach(([v, label, dis]) => { const o = document.createElement('option'); o.value = v; o.textContent = label; if (dis) o.disabled = true; sel.appendChild(o); });
+    sel.value = value;
+  }
+  /* o instrumento na tela mostra sempre a trilha principal selecionada */
+  function sync3d() { syncViz().catch(e => { $('p3dMsg').textContent = 'Não foi possível mostrar o instrumento neste aparelho: ' + e.message; }); }
+  async function syncViz() {
+    if ($('panel3d').hidden) return;
+    const t = S.score && S.score.tracks[S.primary];
+    const modes = t ? modesFor(t) : ['neck3d', 'neck2d', 'keys3d', 'keys2d'];
+    const hideAll = () => { Object.values(VIZ_MODS).forEach(M => { $(M.canvas).hidden = true; }); Object.values(S.viz).forEach(v => v.setVisible(false)); };
+    if (!modes.length) {
+      hideAll(); S.fb = null; S.vizMode = null; S.threeTrack = -1;
+      fillSelect($('selVizMode'), [['', 'Percussão', true]], '');
+      $('selVizView').innerHTML = ''; $('selVizView').hidden = true;
+      $('p3dMsg').textContent = 'Bateria e percussão ainda não têm instrumento na tela.';
+      return;
+    }
+    $('selVizView').hidden = false;
+    const stringedTrack = !t || neckable(t);
+    let mode = stringedTrack ? prefs.vizNeck : prefs.vizOther;
+    if (!modes.includes(mode)) mode = modes[0];
+    S.vizMode = mode; S.threeTrack = t ? S.primary : -1;
+    fillSelect($('selVizMode'), modes.map(m => [m, VIZ_MODS[m].label]), mode);
+    const M = VIZ_MODS[mode];
+    const view = M.views.some(v => v[0] === prefs.vizViews[mode]) ? prefs.vizViews[mode] : M.views[0][0];
+    const viewItems = M.views.slice();
+    if (mode.startsWith('neck')) { viewItems.push(['', '──────────', true]); viewItems.push(['__flip', (prefs.flip ? '✓ ' : '') + 'Cordas invertidas']); }
+    fillSelect($('selVizView'), viewItems, view);
+    Object.entries(VIZ_MODS).forEach(([k, X]) => { $(X.canvas).hidden = k !== mode; if (k !== mode && S.viz[k]) S.viz[k].setVisible(false); });
+    $('p3dMsg').textContent = S.viz[mode] ? '' : 'Carregando…';
+    const inst = await ensureViz(mode);
+    if (S.vizMode !== mode) return;
+    $('p3dMsg').textContent = '';
+    S.fb = inst; window.__viz = inst;
+    inst.setVisible(true); inst.resize();
+    const key = S.primary + '|' + (t ? trackTuning(t).join(',') : '') + '|' + prefs.flip + '|' + (S.score ? S.score.title : '');
+    if (inst._tsKey !== key) {
+      inst._tsKey = key;
+      if (mode.startsWith('neck')) { inst.flip = prefs.flip; inst.setInstrument(t ? trackTuning(t) : [64, 59, 55, 50, 45, 40]); }
+      else inst.setTrack({ twoStaves: t ? t.staves.length > 1 : false });
+    }
+    if (inst._view !== view) { inst._view = view; inst.setCamera(view); }
+    show3dIdle();
+  }
+  $('selVizMode').onchange = () => {
+    const v = $('selVizMode').value; if (!VIZ_MODS[v]) return;
+    const t = S.score && S.score.tracks[S.primary];
+    if (!t || neckable(t)) prefs.vizNeck = v; else prefs.vizOther = v;
+    savePrefs(); sync3d();
+  };
+  $('selVizView').onchange = () => {
+    const v = $('selVizView').value, mode = S.vizMode; if (!mode) return;
+    if (v === '__flip') { prefs.flip = !prefs.flip; savePrefs(); Object.values(S.viz).forEach(i => { i._tsKey = null; }); sync3d(); return; }
+    prefs.vizViews[mode] = v; savePrefs();
+    const inst = S.viz[mode]; if (inst) { inst._view = v; inst.setCamera(v); show3dIdle(); }
+  };
   function toggle3d(force) {
     const p = $('panel3d');
     const on = force === undefined ? p.hidden : force;
     p.hidden = !on; $('btn3d').classList.toggle('on', on);
-    if (!on) { if (S.fb) S.fb.setVisible(false); return; }
-    if (S.fb) { S.fb.setVisible(true); S.fb.resize(); show3dIdle(); return; }
-    if (S.fbLoading) return;
-    $('p3dMsg').textContent = 'Carregando 3D…';
-    S.fbLoading = import('./fretboard3d.js').then(mod => {
-      S.fb = new mod.Fretboard3D($('canvas3d'), { onPick: on3dPick, flip: prefs.flip });
-      $('p3dMsg').textContent = '';
-      S.fbKey = null;
-      if (S.score) sync3d(); else S.fb.setInstrument([64, 59, 55, 50, 45, 40]);
-      show3dIdle();
-      window.__fb = S.fb;
-    }).catch(e => { $('p3dMsg').textContent = 'O 3D não pôde ser carregado neste aparelho: ' + e.message; S.fbLoading = null; });
+    if (!on) { Object.values(S.viz).forEach(v => v.setVisible(false)); return; }
+    sync3d();
   }
   function show3dIdle() {
     if (!S.fb || !S.score || S.playing) return;
@@ -962,15 +1039,12 @@
     } else S.fb.showStatic([], null);
   }
   function on3dPick(string, fret) {
-    if (!S.edit) { toast('Ative o modo edição para escrever tocando no braço 3D'); return; }
+    if (!S.edit) { toast('Ative o modo edição para escrever tocando no braço'); return; }
     if (S.threeTrack < 0) return;
     if (S.cur.track !== S.threeTrack) setEditTrack(S.threeTrack);
     S.cur.string = string;
     edSetFret(fret);
   }
-  document.querySelectorAll('[data-cam]').forEach(b => b.onclick = () => { if (S.fb) S.fb.setCamera(b.dataset.cam); });
-  $('chkFlip').checked = prefs.flip;
-  $('chkFlip').onchange = () => { prefs.flip = $('chkFlip').checked; savePrefs(); if (S.fb) S.fb.setFlip(prefs.flip); };
   document.querySelector('[data-close3d]').onclick = () => toggle3d(false);
 
   /* ---------------- visualização ---------------- */

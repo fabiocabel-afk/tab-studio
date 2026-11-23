@@ -232,3 +232,10 @@ dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; ma
   .tl-name { max-width: 40vw; }
 }
 @media print { .trackbar { display: none !important; } }
+
+/* ---------- painel do instrumento (2D/3D) ---------- */
+#vizStage { flex: 1; position: relative; min-height: 0; }
+#vizStage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+#vizStage canvas[hidden] { display: none; }
+#selVizMode, #selVizView { font-size: 13px; padding: 4px 8px; }
+#selVizMode { font-weight: 600; }

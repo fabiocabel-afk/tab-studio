@@ -30,7 +30,7 @@
     </nav>
     <nav class="tb-group">
       <button class="tb toggle" id="btnEdit" title="Modo edição (E)"><i>✎</i><span>Editar</span></button>
-      <button class="tb toggle" id="btn3d" title="Braço 3D"><i>🎸</i><span>3D</span></button>
+      <button class="tb toggle" id="btn3d" title="Instrumento na tela (braço / teclado)"><i>🎸</i><span>Instrumento</span></button>
       <button class="tb toggle" id="btnTracks" title="Trilhas e mixer"><i>🎚</i><span>Trilhas</span></button>
       <button class="tb toggle" id="btnView" title="Visualização"><i>👁</i><span>Ver</span></button>
     </nav>
@@ -102,16 +102,17 @@
       <!-- Painel 3D -->
       <section id="panel3d" hidden>
         <div class="p3d-bar">
-          <b>Braço 3D</b>
-          <span id="p3dTrack" class="p3d-track" title="Trilha selecionada na barra de trilhas"></span>
-          <button class="btn sm" data-cam="player" title="Acompanha as notas">Visão do músico</button>
-          <button class="btn sm" data-cam="top">Topo</button>
-          <button class="btn sm" data-cam="full">Braço inteiro</button>
-          <label class="chk sm"><input type="checkbox" id="chkFlip"> Inverter cordas</label>
+          <select id="selVizMode" title="Instrumento: braço ou teclado, 2D ou 3D"></select>
+          <select id="selVizView" title="Visão"></select>
           <span class="p3d-msg" id="p3dMsg"></span>
-          <button class="x" data-close3d>✕</button>
+          <button class="x" data-close3d title="Fechar">✕</button>
         </div>
-        <canvas id="canvas3d"></canvas>
+        <div id="vizStage">
+          <canvas id="canvas3d" data-mode="neck3d"></canvas>
+          <canvas id="canvasN2d" data-mode="neck2d" hidden></canvas>
+          <canvas id="canvasK3d" data-mode="keys3d" hidden></canvas>
+          <canvas id="canvasK2d" data-mode="keys2d" hidden></canvas>
+        </div>
       </section>
     </section>
 
