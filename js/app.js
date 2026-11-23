@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '1.6.0';
+  const APP_VERSION = '1.6.1';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Store = window.TabStore;
@@ -825,7 +825,7 @@
     if (/^[0-9]$/.test(k)) {
       e.preventDefault();
       const now = e.timeStamp || Date.now(); let v = +k, merge = false;
-      if (S.fretBuf && now - S.fretT < 900 && +(S.fretBuf + k) <= 30) { v = +(S.fretBuf + k); S.fretBuf = ''; merge = true; }
+      if (S.fretBuf && now - S.fretT < 1200 && +(S.fretBuf + k) <= 30) { v = +(S.fretBuf + k); S.fretBuf = ''; merge = true; }
       else S.fretBuf = k;
       S.fretT = now;
       edSetFret(v, merge); return;
