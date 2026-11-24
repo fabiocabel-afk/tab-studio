@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '2.2.3';
+  const APP_VERSION = '2.2.4';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Store = window.TabStore;
@@ -516,13 +516,27 @@
   $('btnNextSys').onclick = () => jumpSystem(1);
   $('btnHome').onclick = () => { if (S.score) seekToBar(0); };
   /* ▲ ▼ no topo: troca de instrumento (trilha) sem abrir a lista; do último volta ao primeiro e vice-versa */
+  // trilha com som: tem pelo menos uma nota em algum ponto da música (só pausas = vazia)
+  function trackHasNotes(t) {
+    for (const st of t.staves) for (const b of st.bars) for (const v of b.voices) for (const be of v.beats) if (!be.isRest && be.notes.length) return true;
+    return false;
+  }
   function stepTrack(d) {
     if (!S.score) return;
     const n = S.score.tracks.length; if (n < 2) return;
-    const i = ((S.primary + d) % n + n) % n;
+    const skip = prefs.skipEmpty !== false;
+    let i = S.primary;
+    for (let k = 0; k < n - 1; k++) {
+      i = ((i + d) % n + n) % n;
+      if (!skip || trackHasNotes(S.score.tracks[i])) break;
+      if (k === n - 2) i = S.primary;
+    }
+    if (i === S.primary) { toast('Nenhuma outra trilha tem notas'); return; }
     selectTrack(i);
     toast(S.score.tracks[i].name.trim() || 'Trilha ' + (i + 1));
   }
+  $('chkSkipEmpty').checked = prefs.skipEmpty !== false;
+  $('chkSkipEmpty').onchange = () => { prefs.skipEmpty = $('chkSkipEmpty').checked; savePrefs(); };
   $('btnTrkUp').onclick = () => stepTrack(-1);
   $('btnTrkDown').onclick = () => stepTrack(1);
   $('rngSeek').addEventListener('input', () => { S.seeking = true; });
