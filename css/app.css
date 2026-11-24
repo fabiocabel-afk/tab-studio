@@ -374,14 +374,12 @@ dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; ma
 }
 
 /* ---------- músicas: abrir, recentes e repertórios ---------- */
-dialog.lib { width: min(620px, 94vw); min-width: 0; max-height: 88vh; padding: 0; display: none; flex-direction: column; overflow: hidden; }
+dialog.lib { width: min(620px, 94vw); min-width: 0; height: min(680px, 86vh); max-height: 86vh; padding: 0; display: none; flex-direction: column; overflow: hidden; }
 dialog.lib[open] { display: flex; }
-dialog.lib.small { width: min(460px, 94vw); }
+dialog.lib.small { width: min(460px, 94vw); height: auto; }
 .lib-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 16px 18px 10px; }
 .lib-head h3 { margin: 0; flex: 1; min-width: 0; font-size: 18px; }
 .lib-head h3 span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lib-actions { flex: 1 1 100%; display: flex; gap: 8px; margin-top: 6px; }
-.lib-actions .btn { flex: 1; padding: 12px 14px; }
 .lib-tabs { margin: 2px 18px 10px; display: flex; }
 .lib-tabs button { flex: 1; height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 14px; }
 .lib-tabs button svg.i { width: 17px; height: 17px; }
@@ -390,24 +388,15 @@ dialog.lib.small { width: min(460px, 94vw); }
 .lib-foot:empty { display: none; }
 .foot-hint { flex: 1; min-width: 160px; }
 .pick-sub { padding: 0 18px 10px; font-size: 13px; }
-#dlgPick .rep-grid { padding: 0 18px 18px; max-height: 60vh; overflow: auto; }
+#dlgPick .rep-list { padding: 0 18px 18px; max-height: 60vh; overflow: auto; }
 dialog.lib #recentList { min-width: 0; max-height: none; overflow: visible; }
 .rec-add, .rec-in { flex: none; width: 38px; height: 38px; border: 0; border-radius: 10px; background: none; color: var(--pri-tx); display: inline-grid; place-items: center; cursor: pointer; padding: 0; }
 .rec-add:hover { background: var(--surf3); }
 .rec-add svg.i, .rec-in svg.i { width: 20px; height: 20px; }
 .rec-in { color: var(--green); cursor: default; }
 .rec .x { background: none; }
-.rep-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
-.rep-card { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left; background: var(--surf2); color: var(--tx); border: 2px solid transparent; border-radius: 16px; padding: 14px; cursor: pointer; min-height: 104px; }
-.rep-card:hover { background: var(--surf3); }
-.rep-card b { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
-.rep-card .rc-sub { font-size: 12px; color: var(--tx2); }
 .rc-ic { width: 34px; height: 34px; border-radius: 10px; background: var(--brand); color: #fff; display: grid; place-items: center; margin-bottom: 4px; }
 .rc-ic svg.i { width: 20px; height: 20px; }
-.rep-card.playing { border-color: var(--orange); }
-.rep-card.new { background: none; border: 2px dashed color-mix(in srgb, var(--brand2) 70%, transparent); color: var(--pri-tx); justify-content: center; align-items: center; }
-.rep-card.new .rc-ic { background: none; color: var(--pri-tx); border: 2px dashed currentColor; }
-.rep-card.new:hover { background: color-mix(in srgb, var(--brand) 10%, transparent); }
 .rep-title { font-size: 17px !important; }
 .rep-acts { display: flex; gap: 6px; }
 .x.danger { color: var(--pink); }
@@ -444,10 +433,30 @@ dialog.lib #recentList { min-width: 0; max-height: none; overflow: visible; }
 .rep-bar .x { height: 36px; width: 36px; }
 .rep-bar .pb.sq:disabled { opacity: .4; cursor: default; }
 @media (max-width: 600px) {
-  .lib-actions .btn { padding: 10px; }
-  .rep-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .lib-head, .lib-body, .lib-foot { padding-left: 14px; padding-right: 14px; }
   .lib-tabs { margin-left: 14px; margin-right: 14px; }
   .foot-hint { display: none; }
 }
 .rep-opts .sw { flex-direction: row; align-items: center; margin: 0 0 0 auto; font-size: 13px; color: var(--tx); }
+
+/* repertórios em lista (mesmo jeito dos recentes) */
+.rep-list { display: flex; flex-direction: column; gap: 6px; }
+.rep-row { display: flex; align-items: center; gap: 6px; border-radius: 12px; background: var(--surf2); padding-right: 8px; border: 2px solid transparent; }
+.rep-row:hover { background: var(--surf3); }
+.rep-row.playing { border-color: var(--orange); }
+.rr-open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; background: none; border: 0; color: var(--tx); padding: 9px 10px; cursor: pointer; text-align: left; }
+.rr-open .rc-ic { margin: 0; flex: none; }
+.rr-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.rr-txt b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rr-txt > span { font-size: 12px; color: var(--tx2); }
+.rr-play { flex: none; width: 42px; height: 42px; border-radius: 50%; border: 0; background: linear-gradient(145deg, #8a45c4, #642A90); color: #fff; display: grid; place-items: center; cursor: pointer; padding: 0; box-shadow: 0 4px 12px rgba(100,42,144,.4); }
+.rr-play svg.i { width: 20px; height: 20px; margin-left: 2px; }
+.rr-play:disabled { opacity: .35; cursor: default; box-shadow: none; }
+.rep-row.new { width: 100%; background: none; border: 2px dashed color-mix(in srgb, var(--brand2) 70%, transparent); color: var(--pri-tx); padding: 12px 10px 12px 16px; cursor: pointer; text-align: left; }
+.rep-row.new:hover { background: color-mix(in srgb, var(--brand) 10%, transparent); }
+.rep-row.new .rr-txt b { font-size: 14px; }
+.rr-plus { flex: none; width: 34px; height: 34px; border-radius: 10px; background: var(--brand); color: #fff; display: grid; place-items: center; }
+.rr-plus svg.i { width: 20px; height: 20px; }
+.lib-sub { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; position: sticky; top: -4px; z-index: 3; background: var(--surf); padding: 4px 0 6px; }
+.lib-sub .rep-title { flex: 1; min-width: 0; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib-sub .x { background: var(--surf2); }

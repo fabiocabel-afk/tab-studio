@@ -194,13 +194,18 @@
     }
 
     /* ---------------- escolher repertório (de um recente ou da música tocando) ---------------- */
-    function card(r) {
-      const b = el('button', 'rep-card' + (S.rep && S.rep.id === r.id ? ' playing' : ''));
-      b.type = 'button'; b.dataset.id = r.id;
-      b.innerHTML = '<span class="rc-ic">' + icon('rep') + '</span><b>' + esc(r.name) + '</b><span class="rc-sub">' + plural(r.items.length, 'música', 'músicas') + ' · ' + (r.mode === 'count' ? 'contagem' : 'direto') + (r.repeat ? ' · repete' : '') + '</span>';
-      return b;
+    // repertórios em linhas compridas, no mesmo jeito da lista de recentes
+    function card(r, withPlay) {
+      const row = el('div', 'rep-row' + (S.rep && S.rep.id === r.id ? ' playing' : ''));
+      row.dataset.id = r.id;
+      row.innerHTML = '<button type="button" class="rr-open"><span class="rc-ic">' + icon('rep') + '</span><span class="rr-txt"><b>' + esc(r.name) + '</b><span>' + plural(r.items.length, 'música', 'músicas') + ' · ' + (r.mode === 'count' ? 'contagem' : 'direto') + (r.repeat ? ' · repete' : '') + '</span></span></button>' +
+        (withPlay ? '<button type="button" class="rr-play" title="Tocar o repertório"' + (r.items.length ? '' : ' disabled') + '>' + icon('play') + '</button>' : '');
+      return row;
     }
-    function newCard() { const b = el('button', 'rep-card new', '<span class="rc-ic">' + icon('plus') + '</span><b>Novo repertório</b>'); b.type = 'button'; return b; }
+    function newCard() {
+      const b = el('button', 'rep-row new', '<span class="rr-txt"><b>Novo repertório</b></span><span class="rr-plus">' + icon('plus') + '</span>');
+      b.type = 'button'; return b;
+    }
     async function pickRep(sub, make) {
       const d = $('dlgPick'); $('pickSub').textContent = sub;
       const go = async id => {
@@ -216,7 +221,7 @@
         } catch (e) { await C.gcFile(item.fid).catch(() => { /* segue */ }); saveErr(e, 'A música'); }
       };
       const box = $('pickList'); box.innerHTML = '';
-      (await list()).forEach(r => { const b = card(r); b.onclick = () => go(r.id); box.appendChild(b); });
+      (await list()).forEach(r => { const b = card(r, false); b.querySelector('.rr-open').onclick = () => go(r.id); box.appendChild(b); });
       const nb = newCard();
       nb.onclick = async () => { d.close(); const name = await askName('Novo repertório', ''); if (!name) return; const r = await createRep(name); if (r) { refreshLib(); go(r.id); } };
       box.appendChild(nb);
@@ -267,18 +272,17 @@
         b.classList.toggle('on', b.dataset.tab === L.tab);
         b.onclick = () => { L.tab = b.dataset.tab; L.repId = null; L.adding = false; renderLib(); };
       });
+      // a janela fica sempre igual: título, as duas guias e o corpo; só o conteúdo do corpo muda
+      const head = $('libHead');
+      if (!head.firstChild) {
+        head.innerHTML = '<h3>' + icon('lib') + '<span>Músicas</span></h3><button type="button" class="x" data-close title="Fechar">' + icon('close') + '</button>';
+        head.querySelector('[data-close]').onclick = closeLib;
+      }
       if (L.tab === 'reps' && L.repId) {
         const r = (await list()).find(x => x.id === L.repId);
-        if (r) { tabs.hidden = true; return L.adding ? drawAdd(r) : drawRep(r); }
+        if (r) return L.adding ? drawAdd(r) : drawRep(r);
         L.repId = null;
       }
-      tabs.hidden = false;
-      const head = $('libHead');
-      head.innerHTML = '<h3>' + icon('lib') + '<span>Músicas</span></h3><button type="button" class="x" data-close title="Fechar">' + icon('close') + '</button>' +
-        '<div class="lib-actions"><button type="button" class="btn primary" id="libOpen">' + icon('folder') + 'Abrir arquivo</button><button type="button" class="btn" id="libNew">' + icon('plus') + 'Nova música</button></div>';
-      head.querySelector('[data-close]').onclick = closeLib;
-      $('libOpen').onclick = () => { closeLib(); C.openFilePicker(); };
-      $('libNew').onclick = () => { closeLib(); C.newSong(); };
       return L.tab === 'recent' ? drawRecent() : drawReps();
     }
     function recentRow(m, mode, inRep) {
@@ -312,9 +316,14 @@
     async function drawReps() {
       const body = $('libBody'), foot = $('libFoot');
       const reps = await list();
-      body.innerHTML = '<div class="rep-grid" id="repGrid"></div>';
+      body.innerHTML = '<div class="rep-list" id="repGrid"></div>';
       const grid = $('repGrid');
-      reps.forEach(r => { const c = card(r); c.onclick = () => { L.repId = r.id; renderLib(); }; grid.appendChild(c); });
+      reps.forEach(r => {
+        const c = card(r, true);
+        c.querySelector('.rr-open').onclick = () => { L.repId = r.id; renderLib(); };
+        c.querySelector('.rr-play').onclick = () => { closeLib(); if (S.playing) api.stop(); openItem(r.id, 0, true); };
+        grid.appendChild(c);
+      });
       const nb = newCard();
       nb.onclick = async () => { const name = await askName('Novo repertório', ''); if (!name) return; const r = await createRep(name); if (r) { L.repId = r.id; renderLib(); } };
       grid.appendChild(nb);
@@ -332,15 +341,13 @@
       return c.map(x => '<i class="chip">' + esc(x) + '</i>').join('');
     }
     function drawRep(r) {
-      const head = $('libHead'), body = $('libBody'), foot = $('libFoot');
+      const body = $('libBody'), foot = $('libFoot');
       const active = S.rep && S.rep.id === r.id;
-      head.innerHTML = '<button type="button" class="x back" id="repBack" title="Voltar aos repertórios">' + icon('back') + '</button>' +
-        '<h3 class="rep-title">' + icon('rep') + '<span>' + esc(r.name) + '</span></h3>' +
+      body.innerHTML = '<div class="lib-sub"><button type="button" class="x back" id="repBack" title="Voltar aos repertórios">' + icon('back') + '</button>' +
+        '<b class="rep-title">' + esc(r.name) + '</b>' +
         '<div class="rep-acts"><button type="button" class="x" id="repRename" title="Renomear">' + icon('edit') + '</button>' +
         '<button type="button" class="x" id="repShare" title="Exportar / compartilhar com a banda">' + icon('share') + '</button>' +
-        '<button type="button" class="x danger" id="repDelete" title="Apagar repertório">' + icon('trash') + '</button>' +
-        '<button type="button" class="x" data-close title="Fechar">' + icon('close') + '</button></div>';
-      head.querySelector('[data-close]').onclick = closeLib;
+        '<button type="button" class="x danger" id="repDelete" title="Apagar repertório">' + icon('trash') + '</button></div></div>';
       $('repBack').onclick = () => { L.repId = null; renderLib(); };
       $('repRename').onclick = async () => {
         const name = await askName('Renomear repertório', r.name); if (!name || name === r.name) return;
@@ -357,7 +364,6 @@
         if (S.rep && S.rep.id === r.id) { S.rep = null; S.repPending = false; }
         L.repId = null; renderLib(); updateBar(); toast('Repertório apagado');
       };
-      body.innerHTML = '';
       const ul = el('div', 'rep-items'); ul.id = 'repItems';
       if (!r.items.length) ul.appendChild(el('p', 'muted', 'Repertório vazio. Toque em <b>Adicionar música</b> para escolher dos recentes ou do aparelho.'));
       r.items.forEach((it, i) => {
@@ -434,13 +440,11 @@
       }));
     }
     async function drawAdd(r) {
-      const head = $('libHead'), body = $('libBody'), foot = $('libFoot');
-      head.innerHTML = '<button type="button" class="x back" id="addBack" title="Voltar ao repertório">' + icon('back') + '</button><h3 class="rep-title"><span>Adicionar a "' + esc(r.name) + '"</span></h3><div class="rep-acts"><button type="button" class="x" data-close title="Fechar">' + icon('close') + '</button></div>';
-      head.querySelector('[data-close]').onclick = closeLib;
-      $('addBack').onclick = () => { L.adding = false; renderLib(); };
+      const body = $('libBody'), foot = $('libFoot');
       const has = new Set(r.items.map(x => x.fid));
-      body.innerHTML = '<div class="add-src"><button type="button" class="btn" id="addDevice">' + icon('folder') + 'Escolher no aparelho</button>' +
+      body.innerHTML = '<div class="lib-sub"><button type="button" class="x back" id="addBack" title="Voltar ao repertório">' + icon('back') + '</button><b class="rep-title">Adicionar a "' + esc(r.name) + '"</b></div><div class="add-src"><button type="button" class="btn" id="addDevice">' + icon('folder') + 'Escolher no aparelho</button>' +
         (S.score ? '<button type="button" class="btn" id="addCurrent">' + icon('repadd') + 'A música aberta agora</button>' : '') + '</div><div class="lbl add-lbl">Recentes</div><div id="addList"></div>';
+      $('addBack').onclick = () => { L.adding = false; renderLib(); };
       $('addDevice').onclick = () => pickFile('add', r.id);
       if (S.score) $('addCurrent').onclick = async () => {
         let item; try { item = await itemFromCurrent(); } catch (e) { saveErr(e, 'A música'); return; }
