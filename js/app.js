@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '2.0.0';
+  const APP_VERSION = '2.1.0';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Store = window.TabStore;
@@ -26,8 +26,10 @@
     fretBuf: '', fretT: 0,
     playerReady: false, playing: false, endTime: 0, seeking: false,
     mix: {}, threeTrack: 0, primary: 0, fb: null, lastTick: 0,
-    pendingScroll: null
+    pendingScroll: null,
+    rep: null, curBytes: null, repPending: false
   };
+  let Rep = null; // módulo de repertórios (js/rep.js), criado no fim
 
   /* ---------------- alphaTab ---------------- */
   const viewport = $('viewport');
@@ -89,6 +91,9 @@
   }
   function toast(msg, kind, ms) {
     const t = $('toast'); t.textContent = msg; t.className = 'show ' + (kind || '');
+    // com uma janela aberta, o aviso vai para dentro dela (senão fica escondido atrás)
+    const ds = [...document.querySelectorAll('dialog[open]')]; const host = ds.length ? ds[ds.length - 1] : document.body;
+    if (t.parentNode !== host) host.appendChild(t);
     clearTimeout(toastT); toastT = setTimeout(() => { t.className = ''; }, ms || (kind === 'err' ? 6000 : 2600));
   }
   function showMsg(title, html, buttons) {
@@ -134,23 +139,34 @@
   /* ---------------- carregar / mostrar ---------------- */
   function setScore(score, opts) {
     opts = opts || {};
+    if (Rep) Rep.leaving(); // guarda os ajustes da música do repertório que está saindo
+    S.rep = opts.rep || null; S.repPending = !!opts.rep; S.curBytes = null;
     S.score = score;
     S.fileName = opts.name || score.title || 'musica';
     S.saveHandle = opts.saveHandle || null;
     S.undo = []; S.redo = []; S.mix = {}; S.clip = null;
     S.dirty = !!opts.dirty;
     S.tracks = [firstStringed(score)];
-    S.cur = { track: S.tracks[0], staff: 0, bar: 0, voice: 0, beat: 0, string: 1 };
+    // ajustes guardados (repertório): trilhas mostradas, a principal e o mixer
+    const okT = i => Number.isInteger(i) && i >= 0 && i < score.tracks.length;
+    if (Array.isArray(opts.tracks) && opts.tracks.filter(okT).length) S.tracks = [...new Set(opts.tracks.filter(okT))].sort((a, b) => a - b);
+    let prim = okT(opts.primary) && S.tracks.includes(opts.primary) ? opts.primary : S.tracks[0];
+    if (opts.mix && typeof opts.mix === 'object') {
+      for (const k of Object.keys(opts.mix)) { const m = opts.mix[k]; if (okT(+k) && m) S.mix[+k] = { mute: !!m.mute, solo: !!m.solo, vol: Math.max(0, Math.min(1.5, +m.vol || 0)) }; }
+    }
+    S.cur = { track: prim, staff: 0, bar: 0, voice: 0, beat: 0, string: 1 };
     Ops.clampCursor(score, S.cur);
     S.cur.string = Ops.stringCount(score, S.cur);
-    S.primary = S.tracks[0]; S.threeTrack = S.primary;
+    S.primary = prim; S.threeTrack = S.primary;
     $('welcome').hidden = true;
     viewport.scrollTop = 0; viewport.scrollLeft = 0;
     if (S.edit) { S.viewTracksBeforeEdit = null; S.tracks = [S.cur.track]; }
+    waitMidi = true; waitRender = true;
     render();
     tbar.setScore(score); tbar.setPos(0); tbar.setRange(null);
     updateTitle(); refreshTrackUI(); updateEditor();
     if (opts.enterEdit && !S.edit) toggleEdit(true);
+    if (Rep) Rep.updateBar();
   }
   function firstStringed(score) {
     // prefere guitarra/violão/baixo (programas GM 24–39) com tablatura visível
@@ -240,7 +256,7 @@
     });
     return a >= 0 && b >= a ? [a, b] : null;
   }
-  function setRangeBars(a, b) {
+  function setRangeBars(a, b, quiet) {
     const tc = api.tickCache; if (!tc || !S.score) return;
     const mA = S.score.masterBars[a], mB = S.score.masterBars[b];
     const R = (at.synth && at.synth.PlaybackRange) ? new at.synth.PlaybackRange() : {};
@@ -253,7 +269,7 @@
     } catch (e) { /* destaque é opcional */ }
     tbar.setRange([a, b]);
     try { api.tickPosition = R.startTick; } catch (e) { /* nada */ }
-    toast('Trecho: compassos ' + (a + 1) + ' a ' + (b + 1) + (api.isLooping ? ' (repetindo)' : ' — ligue a repetição para repetir'));
+    if (!quiet) toast('Trecho: compassos ' + (a + 1) + ' a ' + (b + 1) + (api.isLooping ? ' (repetindo)' : ' — ligue a repetição para repetir'));
   }
   function renderKeepScroll() {
     S.pendingScroll = { top: viewport.scrollTop, left: viewport.scrollLeft };
@@ -269,6 +285,7 @@
       return false;
     }
     setScore(score, Object.assign({ name: name.replace(/\.[^.]+$/, '') }, extra || {}));
+    S.curBytes = bytes;
     toast('Aberto: ' + name + ' — ' + score.tracks.length + ' trilha(s), ' + score.masterBars.length + ' compassos', 'ok');
     return true;
   }
@@ -288,7 +305,7 @@
       const drop = keep.slice(RECENT_MAX).concat(list.filter(x => x.id !== id && x.name === name));
       await Store.set('file:' + id, bytes);
       await Store.set('recent', keep.slice(0, RECENT_MAX));
-      for (const d of drop) if (d.id !== id) await Store.del('file:' + d.id);
+      for (const d of drop) if (d.id !== id) await gcFile(d.id);
       updateRecentButton();
     } catch (e) { /* sem espaço no aparelho: a lista só não é atualizada */ }
   }
@@ -301,40 +318,36 @@
   }
   async function removeRecent(id) {
     const list = await getRecent();
-    await Store.set('recent', list.filter(x => x.id !== id)); await Store.del('file:' + id);
+    await Store.set('recent', list.filter(x => x.id !== id)); await gcFile(id);
     updateRecentButton();
+  }
+  async function clearRecent() {
+    const list = await getRecent();
+    await Store.set('recent', []);
+    for (const m of list) await gcFile(m.id);
+    updateRecentButton();
+  }
+  /* um arquivo guardado é compartilhado entre recentes e repertórios: só apaga quando ninguém mais usa */
+  async function gcFile(id) {
+    if (!id) return;
+    const inRecent = (await getRecent()).some(x => x.id === id);
+    const inRep = Rep ? await Rep.usesFile(id) : true; // na dúvida, não apaga
+    if (!inRecent && !inRep) await Store.del('file:' + id);
   }
   async function updateRecentButton() { const n = (await getRecent()).length; $('wRecent').innerHTML = icon('clock') + '<span>Recentes' + (n ? ' (' + n + ')' : '') + '</span>'; }
   function fmtSize(n) { return n < 1024 ? n + ' B' : (n / 1024).toFixed(n < 10240 ? 1 : 0).replace('.', ',') + ' KB'; }
-  async function recentDialog() {
-    const d = $('dlgRecent'), box = $('recentList');
-    const draw = async () => {
-      const list = await getRecent();
-      box.innerHTML = list.length ? '' : '<p class="muted">Nenhum arquivo aberto ainda. Os últimos 20 arquivos que você abrir ou salvar aparecem aqui, mesmo sem internet.</p>';
-      $('recentClear').hidden = !list.length;
-      list.forEach(m => {
-        const row = document.createElement('div'); row.className = 'rec';
-        const sub = [m.title && m.title !== m.name.replace(/\.[^.]+$/, '') ? m.title : '', m.artist].filter(Boolean).join(' — ');
-        row.innerHTML = '<button class="rec-open"><b>' + esc(m.name) + '</b><span>' + (sub ? esc(sub) + ' · ' : '') + fmtSize(m.size) + ' · ' + new Date(m.time).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) + '</span></button><button class="x" title="Tirar da lista">✕</button>';
-        row.querySelector('.rec-open').onclick = () => { d.close(); openRecent(m.id); };
-        row.querySelector('.x').onclick = async () => { await removeRecent(m.id); draw(); };
-        box.appendChild(row);
-      });
-    };
-    $('recentClear').onclick = async () => {
-      if (!(await confirmDlg('Limpar recentes', 'Tirar todos os arquivos da lista de recentes? Os arquivos originais no seu aparelho não são apagados.', 'Limpar'))) return;
-      const list = await getRecent(); for (const m of list) await Store.del('file:' + m.id);
-      await Store.set('recent', []); updateRecentButton(); draw();
-    };
-    await draw();
-    d.showModal();
-  }
+  function recentDialog() { return Rep.openLibrary('recent'); }
   async function openFile(file, extra) {
     if (!file) return;
+    if (/\.(zip|tabrep)$/i.test(file.name) && Rep) {
+      try { const b = new Uint8Array(await file.arrayBuffer()); if (await Rep.isRepZip(b)) { Rep.importBytes(b, file.name); return; } }
+      catch (e) { showMsg('Erro ao ler arquivo', esc(e.message)); return; }
+    }
     if (S.dirty && !(await confirmDlg('Alterações não salvas', 'A música atual tem alterações que ainda não foram salvas. Abrir outro arquivo vai descartá-las (o rascunho automático também será substituído).', 'Descartar e abrir'))) return;
     try {
       const buf = await file.arrayBuffer();
       const bytes = new Uint8Array(buf);
+      if (Rep && await Rep.isRepZip(bytes)) { Rep.importBytes(bytes, file.name); return; }
       if (loadBytes(bytes, file.name, extra)) { clearDraft(); addRecent(bytes, file.name); }
     } catch (e) { showMsg('Erro ao ler arquivo', esc(e.message)); }
   }
@@ -353,13 +366,14 @@
   api.playerReady.on(() => { S.playerReady = true; $('btnPlay').disabled = false; $('plStatus').textContent = 'Pronto'; });
   api.playerStateChanged.on(e => {
     S.playing = e.state === 1;
+    if (!S.playing && S.tempCount) { S.tempCount = false; api.countInVolume = $('btnCountIn').classList.contains('on') ? 1 : 0; }
     $('btnPlay').innerHTML = icon(S.playing ? 'pause' : 'play'); $('btnPlay').classList.toggle('playing', S.playing);
     if (S.playing) { Promise.resolve(Wake.request()).then(m => { $('plStatus').textContent = 'Tocando' + (m !== 'off' ? ' · tela sempre ligada' : ''); }); }
     else { Wake.release(); $('plStatus').textContent = S.playerReady ? 'Pausado' : $('plStatus').textContent; }
     if (S.fb) { if (!S.playing) { S.fb.stopAll(); show3dIdle(); } }
   });
   // fim da música: garante que a tela volta a apagar sozinha
-  api.playerFinished.on(() => setTimeout(() => { if (!S.playing) Wake.release(); }, 100));
+  api.playerFinished.on(() => { setTimeout(() => { if (!S.playing) Wake.release(); }, 100); if (Rep) Rep.onFinished(); });
   api.playerPositionChanged.on(e => {
     S.endTime = e.endTime;
     $('plCur').textContent = fmtTime(e.currentTime); $('plEnd').textContent = fmtTime(e.endTime);
@@ -367,7 +381,12 @@
     loopCycleCheck(e.currentTick);
     S.lastTick = e.currentTick;
   });
-  api.midiLoaded.on(() => applyMix());
+  // depois de trocar de música: espera o MIDI e o desenho ficarem prontos (o trecho depende dos dois)
+  const midiWaiters = []; let waitMidi = false, waitRender = false;
+  function runWaiters() { if (waitMidi || waitRender) return; midiWaiters.splice(0).forEach(f => { try { f(); } catch (e) { console.error(e); } }); }
+  api.midiLoaded.on(() => { applyMix(); waitMidi = false; runWaiters(); });
+  api.postRenderFinished.on(() => { waitRender = false; runWaiters(); });
+  function afterMidi(fn) { midiWaiters.push(fn); runWaiters(); }
   api.playedBeatChanged.on(beat => { if (beat && beat.voice) tbar.setPos(beat.voice.bar.index, S.playing); });
   api.playbackRangeChanged.on(e => {
     const rb = rangeBars(e.playbackRange); tbar.setRange(rb);
@@ -511,8 +530,10 @@
     if (S.endTime > 0) api.timePosition = $('rngSeek').value / 1000 * S.endTime;
   });
   $('selSpeed').onchange = () => { api.playbackSpeed = parseFloat($('selSpeed').value); if (S.loopProg) { S.loopProg = null; updateLoopStatus(); toast('Velocidade manual: aumento automático pausado'); } };
-  $('btnMetro').onclick = () => { const on = !(api.metronomeVolume > 0); api.metronomeVolume = on ? 1 : 0; $('btnMetro').classList.toggle('on', on); };
-  $('btnCountIn').onclick = () => { const on = !(api.countInVolume > 0); api.countInVolume = on ? 1 : 0; $('btnCountIn').classList.toggle('on', on); };
+  function setMetro(on) { api.metronomeVolume = on ? 1 : 0; $('btnMetro').classList.toggle('on', !!on); }
+  function setCountIn(on) { S.tempCount = false; api.countInVolume = on ? 1 : 0; $('btnCountIn').classList.toggle('on', !!on); }
+  $('btnMetro').onclick = () => setMetro(!$('btnMetro').classList.contains('on'));
+  $('btnCountIn').onclick = () => setCountIn(!$('btnCountIn').classList.contains('on'));
   $('btnClearSel').onclick = () => { api.playbackRange = null; try { api.clearPlaybackRangeHighlight(); } catch (e) { /* versão sem destaque */ } tbar.setRange(null); toast('Trecho limpo'); };
   $('rngVol').oninput = () => { api.masterVolume = $('rngVol').value / 100; };
   api.masterVolume = 0.8;
@@ -562,9 +583,10 @@
     $('lpStatus').textContent = api.isLooping ? (P ? 'Volta ' + (P.cycle + 1) + ' · ' + Math.round(api.playbackSpeed * 100) + '%' : 'Repetindo') : '';
     $('btnLoop').classList.toggle('on', !!api.isLooping);
   }
-  function applyLoop() {
+  function applyLoop(opt) {
+    opt = opt || {};
     const [a, b] = loopBars();
-    setRangeBars(a, b);
+    setRangeBars(a, b, true);
     api.isLooping = true;
     if ($('lpProg').checked) {
       const from = Math.max(10, Math.min(300, +$('lpFrom').value || 50)), to = Math.max(10, Math.min(300, +$('lpTo').value || 100)), step = Math.max(1, Math.min(100, +$('lpStep').value || 5));
@@ -574,6 +596,7 @@
       setSpeed(from);
     } else S.loopProg = null;
     setLoopPick(null); updateLoopStatus();
+    if (opt.noPlay) return;
     if (!S.playing && S.playerReady) { Wake.request(); api.play(); }
     toast('Repetindo compassos ' + (a + 1) + ' a ' + (b + 1) + (S.loopProg ? ' — de ' + S.loopProg.from + '% até ' + S.loopProg.to + '%, +' + S.loopProg.step + '% por volta' : ''), 'ok', 4000);
   }
@@ -599,7 +622,7 @@
   }
   $('btnLoop').onclick = () => { const p = $('loopPanel'); if (p.hidden) openLoopPanel(); else { p.hidden = true; setLoopPick(null); tbar.setRange(rangeBars(api.playbackRange)); } };
   $('lpClose').onclick = () => { $('loopPanel').hidden = true; setLoopPick(null); tbar.setRange(rangeBars(api.playbackRange)); };
-  $('lpApply').onclick = applyLoop;
+  $('lpApply').onclick = () => applyLoop();
   $('lpOff').onclick = loopOff;
   ['lpStart', 'lpEnd'].forEach(id => {
     $(id).addEventListener('focus', () => setLoopPick(id === 'lpStart' ? 'start' : 'end'));
@@ -1013,7 +1036,9 @@
       how = r; if (r === 'zip') shownName = name + '.zip';
     }
     S.dirty = false; updateTitle(); clearDraft();
+    S.curBytes = data;
     addRecent(data, shownName.replace(/\.zip$/i, ''));
+    if (Rep) Rep.onSaved(data);
     toast((how === 'file' ? 'Salvo' : 'Baixado') + ' e verificado: ' + shownName + ' (' + n2 + ' notas, ' + check.masterBars.length + ' compassos)' + (how === 'zip' ? ' — o .gp está dentro do .zip' : ''), 'ok', 5000);
   }
   /* Entrega um arquivo ao usuário. Fora do link de visualização: download normal.
@@ -1040,14 +1065,16 @@
   function crc32(b) { let c = 0xFFFFFFFF; for (let i = 0; i < b.length; i++) c = CRC_T[(c ^ b[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
   function zipStore(files) {
     const enc = new TextEncoder(); const parts = []; const central = []; let off = 0;
+    // data/hora no formato do zip (sem isso alguns programas reclamam de "data antes de 1980")
+    const now = new Date(), dTime = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1), dDate = ((Math.max(1980, now.getFullYear()) - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
     for (const f of files) {
       const nm = enc.encode(f.name), d = f.data, crc = crc32(d);
       const lh = new DataView(new ArrayBuffer(30));
-      lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true); lh.setUint16(8, 0, true);
+      lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true); lh.setUint16(8, 0, true); lh.setUint16(10, dTime, true); lh.setUint16(12, dDate, true);
       lh.setUint32(14, crc, true); lh.setUint32(18, d.length, true); lh.setUint32(22, d.length, true); lh.setUint16(26, nm.length, true);
       parts.push(new Uint8Array(lh.buffer), nm, d);
       const ch = new DataView(new ArrayBuffer(46));
-      ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true);
+      ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true); ch.setUint16(12, dTime, true); ch.setUint16(14, dDate, true);
       ch.setUint32(16, crc, true); ch.setUint32(20, d.length, true); ch.setUint32(24, d.length, true); ch.setUint16(28, nm.length, true); ch.setUint32(42, off, true);
       central.push(new Uint8Array(ch.buffer), nm);
       off += 30 + nm.length + d.length;
@@ -1421,6 +1448,68 @@
   $('rngZoom').onchange = () => { prefs.zoom = +$('rngZoom').value; applyDisplay(); };
   $('chkFollow').onchange = () => { prefs.follow = $('chkFollow').checked; applyDisplay(); };
 
+  /* ---------------- ajustes da música (para o repertório) ---------------- */
+  // tudo o que o músico ajustou: velocidade, trecho/repetição, trilhas, metrônomo, contagem e mixer
+  function captureSettings() {
+    if (!S.score || S.repPending || !api.tickCache) return null;
+    const r = rangeBars(api.playbackRange);
+    const view = (S.edit && S.viewTracksBeforeEdit) ? S.viewTracksBeforeEdit : S.tracks;
+    const t = S.score.tracks[S.primary];
+    const base = (S.loopProg && S.speedBeforeLoop != null) ? S.speedBeforeLoop : api.playbackSpeed;
+    const mix = {};
+    for (const k of Object.keys(S.mix)) { const m = S.mix[k]; if (m && (m.mute || m.solo || Math.abs(m.vol - 1) > 0.001)) mix[k] = { mute: !!m.mute, solo: !!m.solo, vol: Math.round(m.vol * 100) / 100 }; }
+    return {
+      speed: Math.round(base * 100),
+      loop: r ? { a: r[0], b: r[1], on: !!api.isLooping } : null,
+      prog: S.loopProg ? { from: S.loopProg.from, to: S.loopProg.to, step: S.loopProg.step } : null,
+      tracks: view.slice(), primary: S.primary, trackName: t ? (t.name || '').trim() : '',
+      metro: $('btnMetro').classList.contains('on'), countIn: $('btnCountIn').classList.contains('on'),
+      mix
+    };
+  }
+  // parte que depende do MIDI pronto (trecho em compassos → posição no tempo)
+  function applyPlaySettings(st) {
+    st = st || {};
+    S.loopProg = null; S.speedBeforeLoop = null;
+    setSpeed(st.speed || 100);
+    setMetro(!!st.metro); setCountIn(!!st.countIn);
+    api.isLooping = false;
+    try { api.playbackRange = null; api.clearPlaybackRangeHighlight(); } catch (e) { /* nada destacado */ }
+    tbar.setRange(null);
+    const n = S.score ? S.score.masterBars.length : 0;
+    if (st.loop && st.loop.a >= 0 && st.loop.b >= st.loop.a && st.loop.b < n && api.tickCache) {
+      try { setRangeBars(st.loop.a, st.loop.b, true); } catch (e) { /* trecho inválido: ignora */ }
+      api.isLooping = !!st.loop.on;
+      if (st.prog && st.loop.on) {
+        S.speedBeforeLoop = (st.speed || 100) / 100;
+        S.loopProg = { from: st.prog.from, to: st.prog.to, step: st.prog.step, cycle: 0 };
+        $('lpProg').checked = true; $('lpFrom').value = st.prog.from; $('lpTo').value = st.prog.to; $('lpStep').value = st.prog.step;
+        setSpeed(st.prog.from);
+      }
+    }
+    try { api.tickPosition = api.playbackRange ? api.playbackRange.startTick : 0; } catch (e) { /* sem MIDI */ }
+    S.repPending = false;
+    updateLoopStatus();
+  }
+  /* bytes da música como está agora (alterações não salvas entram também, verificadas) */
+  function currentBytes() {
+    if (S.curBytes && !S.dirty) return S.curBytes;
+    const data = new at.exporter.Gp7Exporter().export(S.score, api.settings);
+    const check = at.importer.ScoreLoader.loadScoreFromBytes(data, api.settings);
+    if (Ops.countNotes(check) !== Ops.countNotes(S.score) || check.masterBars.length !== S.score.masterBars.length || check.tracks.length !== S.score.tracks.length) throw new Error('a conversão da música não conferiu');
+    return data;
+  }
+  function parseScore(bytes) { return at.importer.ScoreLoader.loadScoreFromBytes(bytes, api.settings); }
+  /* entrega um .zip pronto (exportar repertório) */
+  async function deliverZip(bytes, name) {
+    if (!FRAMED) { downloadBlob(new Blob([bytes], { type: 'application/zip' }), name); return 'download'; }
+    let dl = null;
+    try { dl = window.claude && window.claude.use ? await window.claude.use('downloads') : null; } catch (e) { dl = null; }
+    if (!dl) return 'unavailable';
+    try { await dl.save({ filename: name, data: new Blob([bytes]) }); return 'zip'; }
+    catch (e) { return e && e.code === 'declined' ? 'declined' : 'unavailable'; }
+  }
+
   /* ---------------- botões do topo / menus ---------------- */
   function closePopups(except) { ['menuMore', 'viewPanel'].forEach(id => { if (id !== except) $(id).hidden = true; }); $('btnView').classList.toggle('on', !$('viewPanel').hidden); }
   $('wOpen').onclick = () => $('fileInput').click();
@@ -1442,7 +1531,7 @@
     const b = e.target.closest('[data-act]'); if (!b) return;
     const act = b.dataset.act;
     closePopups();
-    ({ open: () => $('fileInput').click(), recent: recentDialog, new: newSongDialog, save: () => saveGp(false), saveAs: () => saveGp(true), midi: exportMidi, print: printScore, demo: openDemo, info: infoDialog, shortcuts: shortcutsDialog, about: aboutDialog })[act]();
+    ({ open: () => $('fileInput').click(), recent: recentDialog, reps: () => Rep.openLibrary('reps'), new: newSongDialog, save: () => saveGp(false), saveAs: () => saveGp(true), midi: exportMidi, print: printScore, demo: openDemo, info: infoDialog, shortcuts: shortcutsDialog, about: aboutDialog })[act]();
   };
 
   /* arrastar e soltar */
@@ -1475,11 +1564,23 @@
     });
   }
 
+  /* ---------------- repertórios ---------------- */
+  Rep = window.makeRepertoire({
+    S, api, Store, $, esc, icon, toast, showMsg, confirmDlg, fmtSize, FRAMED, Wake,
+    getRecent, openRecent, removeRecent, clearRecent, updateRecentButton, gcFile, hashBytes,
+    loadBytes, parseScore, currentBytes, captureSettings, applyPlaySettings, afterMidi, setCountIn,
+    zipStore, deliverZip, fileNotDelivered, clearDraft, addRecent,
+    openFilePicker: () => $('fileInput').click(), newSong: () => newSongDialog()
+  });
+  $('btnLib').onclick = () => Rep.openLibrary();
+  $('wReps').onclick = () => Rep.openLibrary('reps');
+  $('btnRepAdd').onclick = () => Rep.addCurrent();
+
   checkDraft();
 
   // ganchos para testes automatizados
   window.TabStudio = {
     version: APP_VERSION, api, Ops, state: S,
-    loadBytes, setScore, getRecent, openRecent, recentDialog, selectTrack, setVizMode, openLoopPanel, applyLoop, loopOff, setSpeed, seekToBar, setRangeBars, tbar, Wake: window.TabWake, zipStore, exportMidi, buildDemo, openDemo, toggleEdit, toggle3d, edAction, edSetFret, saveGp, undo, redo, commit, drawCursor
+    loadBytes, setScore, getRecent, rep: Rep, captureSettings, gcFile, openRecent, recentDialog, selectTrack, setVizMode, openLoopPanel, applyLoop, loopOff, setSpeed, seekToBar, setRangeBars, tbar, Wake: window.TabWake, zipStore, exportMidi, buildDemo, openDemo, toggleEdit, toggle3d, edAction, edSetFret, saveGp, undo, redo, commit, drawCursor
   };
 })();

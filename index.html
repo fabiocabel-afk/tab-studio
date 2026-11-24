@@ -57,6 +57,14 @@
   <symbol id="i-undo" viewBox="0 0 24 24"><path d="M7.4 7H14a6 6 0 010 12H8v-2.4h6a3.6 3.6 0 000-7.2H7.4l3 3-1.7 1.7L2.8 8.2 8.7 2.3l1.7 1.7z"/></symbol>
   <symbol id="i-redo" viewBox="0 0 24 24"><path d="M16.6 7H10a6 6 0 000 12h6v-2.4h-6a3.6 3.6 0 010-7.2h6.6l-3 3 1.7 1.7 5.9-5.9-5.9-5.9-1.7 1.7z"/></symbol>
   <symbol id="i-select" viewBox="0 0 24 24"><path d="M3 5h3v2H5v1H3zm5 0h3v2H8zm5 0h3v2h-3zm5 0h3v3h-2V7h-1zM3 10h2v4H3zm16 0h2v4h-2zM3 16h2v1h1v2H3zm5 1h3v2H8zm5 0h3v2h-3zm6-1h2v3h-3v-2h1z"/></symbol>
+  <symbol id="i-lib" viewBox="0 0 24 24"><path d="M3 4h4v16H3zM8.5 4h4v16h-4zM14.2 5.1l3.9-1 4.1 15.5-3.9 1z"/></symbol>
+  <symbol id="i-rep" viewBox="0 0 24 24"><path d="M3 5h12v2.2H3zM3 9.4h12v2.2H3zM3 13.8h8v2.2H3zM17 5h4v2.2h-2v8.3a3 3 0 11-2-2.8z"/></symbol>
+  <symbol id="i-repadd" viewBox="0 0 24 24"><path d="M3 5h12v2.2H3zM3 9.4h12v2.2H3zM3 13.8h7v2.2H3zM16.8 12h2.4v3.8H23v2.4h-3.8V22h-2.4v-3.8H13v-2.4h3.8z"/></symbol>
+  <symbol id="i-grip" viewBox="0 0 24 24"><path d="M8 5h3v3H8zm5 0h3v3h-3zM8 10.5h3v3H8zm5 0h3v3h-3zM8 16h3v3H8zm5 0h3v3h-3z"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M20 11H7.8l5.6-5.6L12 4l-8 8 8 8 1.4-1.4L7.8 13H20z"/></symbol>
+  <symbol id="i-share" viewBox="0 0 24 24"><path d="M18 2a3 3 0 11-2.8 4.1L8.9 9.6a3 3 0 010 2.8l6.3 3.5A3 3 0 1118 22a3 3 0 01-2.9-3.8l-6.3-3.5a3 3 0 110-5.4l6.3-3.5A3 3 0 0118 2z"/></symbol>
+  <symbol id="i-import" viewBox="0 0 24 24"><path d="M11 3h2v9.2l3.3-3.3 1.4 1.4-5.7 5.7-5.7-5.7 1.4-1.4L11 12.2zM4 15h2v4h12v-4h2v6H4z"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><path d="M12 4a2 2 0 110 4 2 2 0 010-4zm0 6a2 2 0 110 4 2 2 0 010-4zm0 6a2 2 0 110 4 2 2 0 010-4z"/></symbol>
 </svg>
 <div id="app">
 
@@ -65,6 +73,7 @@
     <div class="brand" title="Tab Studio"><div class="logo"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="#fff" opacity=".5" d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/><circle cx="9" cy="7" r="2.6" fill="#FF9901"/><circle cx="15" cy="12" r="2.6" fill="#fff"/><circle cx="7" cy="17" r="2.6" fill="#99CC33"/></svg></div><span>Tab Studio</span></div>
     <div class="song-title" id="songTitle">—</div>
     <nav class="tb-group">
+      <button class="tb" id="btnLib" title="Músicas: abrir, recentes e repertórios"><i><svg class="i" aria-hidden="true"><use href="#i-lib"/></svg></i><span>Músicas</span></button>
       <button class="tb toggle" id="btnEdit" title="Modo edição (E)"><i><svg class="i" aria-hidden="true"><use href="#i-edit"/></svg></i><span>Editar</span></button>
       <button class="tb toggle" id="btn3d" title="Instrumento na tela (braço, teclado ou bateria)"><i><svg class="i" aria-hidden="true"><use href="#i-guitar"/></svg></i><span>Instrumento</span></button>
       <button class="tb toggle" id="btnTracks" title="Trilhas e mixer"><i><svg class="i" aria-hidden="true"><use href="#i-mixer"/></svg></i><span>Trilhas</span></button>
@@ -74,7 +83,8 @@
     </nav>
     <button class="tb round" id="btnTheme" title="Modo claro / escuro" aria-label="Modo claro / escuro"><svg class="i" aria-hidden="true"><use href="#i-moon"/></svg></button>
     <button class="tb burger" id="btnMore" title="Menu" aria-label="Menu" aria-haspopup="true"><svg class="i" aria-hidden="true"><use href="#i-menu"/></svg></button>
-    <input type="file" id="fileInput" accept=".gp,.gp3,.gp4,.gp5,.gpx,.musicxml,.mxl,.xml,.capx,.tex,.txt" hidden>
+    <input type="file" id="fileInput" accept=".gp,.gp3,.gp4,.gp5,.gpx,.musicxml,.mxl,.xml,.capx,.tex,.txt,.zip,.tabrep" hidden>
+    <input type="file" id="repFileInput" hidden>
   </header>
 
   <!-- Menu "Mais" -->
@@ -83,6 +93,7 @@
     <button data-act="recent"><svg class="i" aria-hidden="true"><use href="#i-clock"/></svg><span>Arquivos recentes</span></button>
     <button data-act="new"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg><span>Nova música</span></button>
     <button data-act="save"><svg class="i" aria-hidden="true"><use href="#i-save"/></svg><span>Salvar</span><kbd>Ctrl+S</kbd></button>
+    <button data-act="reps"><svg class="i" aria-hidden="true"><use href="#i-rep"/></svg><span>Repertórios</span></button>
     <hr>
     <button data-act="saveAs"><svg class="i" aria-hidden="true"><use href="#i-saveas"/></svg><span>Salvar como .gp…</span></button>
     <button data-act="midi"><svg class="i" aria-hidden="true"><use href="#i-keys"/></svg><span>Exportar MIDI</span></button>
@@ -137,6 +148,7 @@
             <button class="btn big primary" id="wOpen"><svg class="i" aria-hidden="true"><use href="#i-folder"/></svg>Abrir arquivo</button>
             <button class="btn big" id="wNew"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg>Nova música</button>
             <button class="btn big" id="wRecent"><svg class="i" aria-hidden="true"><use href="#i-clock"/></svg><span>Recentes</span></button>
+            <button class="btn big" id="wReps"><svg class="i" aria-hidden="true"><use href="#i-rep"/></svg><span>Repertórios</span></button>
             <button class="btn big" id="wDemo"><svg class="i" aria-hidden="true"><use href="#i-note"/></svg>Exemplo</button>
           </div>
           <div id="draftBox" hidden></div>
@@ -273,6 +285,12 @@
 
   <!-- Player -->
   <footer id="player">
+    <div class="rep-bar" id="repBar" hidden>
+      <button class="rb-name" id="rbName" title="Abrir o repertório"><svg class="i" aria-hidden="true"><use href="#i-rep"/></svg><b></b><span class="rb-pos" id="rbPos"></span></button>
+      <button class="pb sq" id="rbPrev" title="Música anterior do repertório"><svg class="i" aria-hidden="true"><use href="#i-prev"/></svg></button>
+      <button class="pb sq" id="rbNext" title="Próxima música do repertório"><svg class="i" aria-hidden="true"><use href="#i-next"/></svg></button>
+      <button class="x" id="rbClose" title="Sair do repertório"><svg class="i" aria-hidden="true"><use href="#i-close"/></svg></button>
+    </div>
     <div class="pl-progress"><span class="pl-t" id="plCur" title="Tempo decorrido">0:00</span><input type="range" id="rngSeek" min="0" max="1000" value="0" aria-label="Posição na música"><span class="pl-t end" id="plEnd" title="Duração">0:00</span></div>
     <div class="pl-row">
       <div class="pl-left"><span class="pl-status" id="plStatus"></span></div>
@@ -285,6 +303,7 @@
         <select id="selSpeed" title="Velocidade" data-icon="speed">
           <option value="0.25">25%</option><option value="0.5">50%</option><option value="0.6">60%</option><option value="0.7">70%</option><option value="0.8">80%</option><option value="0.9">90%</option><option value="1" selected>100%</option><option value="1.1">110%</option><option value="1.25">125%</option><option value="1.5">150%</option>
         </select>
+        <button class="pb sq" id="btnRepAdd" title="Adicionar esta música (com os ajustes atuais) a um repertório"><svg class="i" aria-hidden="true"><use href="#i-repadd"/></svg></button>
         <button class="pb sq tog" id="btnLoop" title="Repetir um trecho"><svg class="i" aria-hidden="true"><use href="#i-loop"/></svg></button>
         <button class="pb sq tog" id="btnMetro" title="Metrônomo"><svg class="i" aria-hidden="true"><use href="#i-metro"/></svg></button>
         <button class="pb sq tog" id="btnCountIn" title="Contagem antes de tocar">1·2</button>
@@ -345,11 +364,25 @@
       <menu><button value="cancel" class="btn">Cancelar</button><button value="ok" class="btn primary">Aplicar</button></menu>
     </form>
   </dialog>
-  <dialog id="dlgRecent">
+  <dialog id="dlgLib" class="lib">
+    <div class="lib-head" id="libHead"></div>
+    <div class="lib-tabs seg" id="libTabs" role="tablist">
+      <button type="button" data-tab="recent"><svg class="i" aria-hidden="true"><use href="#i-clock"/></svg><span>Recentes</span></button>
+      <button type="button" data-tab="reps"><svg class="i" aria-hidden="true"><use href="#i-rep"/></svg><span>Repertórios</span></button>
+    </div>
+    <div class="lib-body" id="libBody"></div>
+    <div class="lib-foot" id="libFoot"></div>
+  </dialog>
+  <dialog id="dlgPick" class="lib small">
+    <div class="lib-head"><h3><svg class="i" aria-hidden="true"><use href="#i-repadd"/></svg><span>Adicionar ao repertório</span></h3><button type="button" class="x" id="pickClose" title="Fechar"><svg class="i" aria-hidden="true"><use href="#i-close"/></svg></button></div>
+    <div class="muted pick-sub" id="pickSub"></div>
+    <div class="rep-grid" id="pickList"></div>
+  </dialog>
+  <dialog id="dlgName" class="small">
     <form method="dialog">
-      <h3><svg class="i" aria-hidden="true"><use href="#i-clock"/></svg>Arquivos recentes</h3>
-      <div id="recentList"></div>
-      <menu><button type="button" class="btn danger" id="recentClear">Limpar lista</button><button value="ok" class="btn primary">Fechar</button></menu>
+      <h3 id="nameTitle">Novo repertório</h3>
+      <label>Nome <input id="nameInput" maxlength="60" autocomplete="off" placeholder="Ex.: Show de sábado"></label>
+      <menu><button value="cancel" class="btn">Cancelar</button><button value="ok" class="btn primary" id="nameOk">Salvar</button></menu>
     </form>
   </dialog>
   <dialog id="dlgMsg">
@@ -367,6 +400,7 @@
 <script src="js/wake.js"></script>
 <script src="js/csel.js"></script>
 <script src="js/trackbar.js"></script>
+<script src="js/rep.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>
