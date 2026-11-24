@@ -4,7 +4,15 @@
 (function (root) {
   'use strict';
   const CELL = 16, ROW = 24, HEAD = 18;
-  const COLORS = ['#f2a33a', '#8a5cf6', '#2fd36b', '#3aa0ff', '#ef5b6b', '#ffd23a', '#26d9d9', '#ff66c4', '#b5e05a', '#ff8a5c'];
+  // cores da marca e variações (laranja, roxo, verde, rosa, azul…)
+  const COLORS = ['#FF9901', '#9b5fd0', '#99CC33', '#EC357D', '#3d8fe0', '#ffc266', '#c9a2ec', '#c2e27e', '#f47fae', '#7fb3ec'];
+  // cores do tema atual (escuro/claro), lidas do CSS
+  function theme() {
+    const cs = getComputedStyle(document.documentElement), v = n => cs.getPropertyValue(n).trim();
+    const light = document.documentElement.dataset.theme === 'light';
+    return { text: v('--tx2') || '#a99bbd', line: v('--line') || '#3a2a55', empty: light ? '#ddd2ea' : '#3b2b55', brand: 'rgba(100,42,144,', cur: '#FF9901', mark: light ? '#22182e' : '#ffffff', edit: light ? '#642A90' : '#c9a2ec' };
+  }
+  const ARROW = d => '<svg class="i" aria-hidden="true"><use href="#i-' + (d ? 'chev' : 'chevr') + '"/></svg>';
 
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
@@ -15,7 +23,7 @@
       this.cur = 0; this.range = null; this.editBar = null; this.playing = false;
       rootEl.innerHTML =
         '<div class="tbar-line" role="button" tabindex="0" title="Mostrar / esconder as trilhas">' +
-          '<span class="tl-arrow">▸</span><span class="tl-dot"></span><span class="tl-name">—</span>' +
+          '<span class="tl-arrow">' + ARROW(false) + '</span><span class="tl-dot"></span><span class="tl-name">—</span>' +
           '<span class="tl-bar">Compasso – / –</span>' +
           '<div class="tl-strip"><canvas></canvas></div>' +
         '</div>' +
@@ -40,7 +48,7 @@
     setCollapsed(c) {
       this.collapsed = !!c;
       this.el.classList.toggle('collapsed', this.collapsed);
-      this.line.querySelector('.tl-arrow').textContent = this.collapsed ? '▸' : '▾';
+      this.line.querySelector('.tl-arrow').innerHTML = ARROW(!this.collapsed);
       if (!this.collapsed) { this.draw(); this.scrollToBar(this.cur, true); }
       this.drawStrip();
     }
@@ -113,31 +121,32 @@
       const nb = s.masterBars.length, nt = s.tracks.length;
       const w = nb * CELL + 8, h = nt * ROW;
       // régua com números dos compassos
+      const T = theme();
       const r = this._ctx(this.ruler, w, HEAD);
-      r.fillStyle = '#a9a3b8'; r.font = '10px system-ui, sans-serif'; r.textBaseline = 'middle';
+      r.fillStyle = T.text; r.font = '10px system-ui, sans-serif'; r.textBaseline = 'middle';
       for (let b = 0; b < nb; b++) {
         if (b === 0 || (b + 1) % 4 === 0) r.fillText(String(b + 1), b * CELL + 2, HEAD / 2);
-        if (s.masterBars[b].isRepeatStart || s.masterBars[b].repeatCount > 0) { r.fillStyle = '#f2a33a'; r.fillRect(b * CELL + (s.masterBars[b].isRepeatStart ? 0 : CELL - 2), HEAD - 4, 2, 4); r.fillStyle = '#a9a3b8'; }
+        if (s.masterBars[b].isRepeatStart || s.masterBars[b].repeatCount > 0) { r.fillStyle = T.cur; r.fillRect(b * CELL + (s.masterBars[b].isRepeatStart ? 0 : CELL - 2), HEAD - 4, 2, 4); r.fillStyle = T.text; }
       }
-      if (this.range) { r.fillStyle = 'rgba(138,92,246,.6)'; r.fillRect(this.range[0] * CELL, HEAD - 3, (this.range[1] - this.range[0] + 1) * CELL, 3); }
+      if (this.range) { r.fillStyle = T.brand + '.75)'; r.fillRect(this.range[0] * CELL, HEAD - 3, (this.range[1] - this.range[0] + 1) * CELL, 3); }
       // grade
       const g = this._ctx(this.grid, w, h);
       for (let t = 0; t < nt; t++) {
         const vis = this.visible.includes(t), prim = t === this.primary;
-        if (vis) { g.fillStyle = prim ? 'rgba(138,92,246,.20)' : 'rgba(138,92,246,.10)'; g.fillRect(0, t * ROW, w, ROW); }
+        if (vis) { g.fillStyle = T.brand + (prim ? '.22)' : '.10)'); g.fillRect(0, t * ROW, w, ROW); }
         const occ = this.occ[t]; const col = this.color(t);
         for (let b = 0; b < nb; b++) {
           const x = b * CELL + 2, y = t * ROW + 5, cw = CELL - 3, ch = ROW - 10;
           if (occ && occ[b]) { g.globalAlpha = vis ? 0.95 : 0.5; g.fillStyle = col; g.fillRect(x, y, cw, ch); g.globalAlpha = 1; }
-          else { g.strokeStyle = '#3a3546'; g.lineWidth = 1; g.strokeRect(x + 0.5, y + 0.5, cw - 1, ch - 1); }
+          else { g.strokeStyle = T.empty; g.lineWidth = 1; g.strokeRect(x + 0.5, y + 0.5, cw - 1, ch - 1); }
         }
       }
-      if (this.range) { g.fillStyle = 'rgba(138,92,246,.28)'; g.fillRect(this.range[0] * CELL, 0, (this.range[1] - this.range[0] + 1) * CELL, h); }
-      if (this.editBar != null) { g.strokeStyle = '#c4a8ff'; g.lineWidth = 2; g.strokeRect(this.editBar * CELL + 1, this.primary * ROW + 2, CELL - 1, ROW - 4); }
+      if (this.range) { g.fillStyle = T.brand + '.30)'; g.fillRect(this.range[0] * CELL, 0, (this.range[1] - this.range[0] + 1) * CELL, h); }
+      if (this.editBar != null) { g.strokeStyle = T.edit; g.lineWidth = 2; g.strokeRect(this.editBar * CELL + 1, this.primary * ROW + 2, CELL - 1, ROW - 4); }
       // compasso atual
-      g.fillStyle = 'rgba(242,163,58,.30)'; g.fillRect(this.cur * CELL, 0, CELL, h);
-      g.fillStyle = '#f2a33a'; g.fillRect(this.cur * CELL, 0, 2, h);
-      r.fillStyle = '#f2a33a'; r.fillRect(this.cur * CELL, 0, CELL, 3);
+      g.fillStyle = 'rgba(255,153,1,.30)'; g.fillRect(this.cur * CELL, 0, CELL, h);
+      g.fillStyle = T.cur; g.fillRect(this.cur * CELL, 0, 2, h);
+      r.fillStyle = T.cur; r.fillRect(this.cur * CELL, 0, CELL, 3);
     }
     /* linha fina: faixa da trilha selecionada correndo */
     drawStrip() {
@@ -145,6 +154,7 @@
       const w = Math.max(10, host.clientWidth), h = 10;
       const g = this._ctx(cv, w, h);
       if (!s) return;
+      const T = theme();
       const nb = s.masterBars.length, cw = 9;
       const occ = this.occ[this.primary] || [];
       const total = nb * cw;
@@ -153,11 +163,11 @@
       for (let b = 0; b < nb; b++) {
         const x = b * cw - off; if (x < -cw || x > w) continue;
         if (occ[b]) { g.fillStyle = this.color(this.primary); g.globalAlpha = b < this.cur ? 0.45 : 0.9; g.fillRect(x + 1, 2, cw - 2, h - 4); g.globalAlpha = 1; }
-        else { g.fillStyle = '#3a3546'; g.fillRect(x + 1, 4, cw - 2, h - 8); }
+        else { g.fillStyle = T.empty; g.fillRect(x + 1, 4, cw - 2, h - 8); }
       }
-      if (this.range) { g.fillStyle = 'rgba(138,92,246,.45)'; g.fillRect(this.range[0] * cw - off, 0, (this.range[1] - this.range[0] + 1) * cw, h); }
-      g.fillStyle = '#ffffff'; g.fillRect(this.cur * cw - off, 0, cw, 2); g.fillRect(this.cur * cw - off, h - 2, cw, 2);
-      g.strokeStyle = '#f2a33a'; g.lineWidth = 2; g.strokeRect(this.cur * cw - off + 0.5, 0.5, cw - 1, h - 1);
+      if (this.range) { g.fillStyle = T.brand + '.55)'; g.fillRect(this.range[0] * cw - off, 0, (this.range[1] - this.range[0] + 1) * cw, h); }
+      g.fillStyle = T.mark; g.fillRect(this.cur * cw - off, 0, cw, 2); g.fillRect(this.cur * cw - off, h - 2, cw, 2);
+      g.strokeStyle = T.cur; g.lineWidth = 2; g.strokeRect(this.cur * cw - off + 0.5, 0.5, cw - 1, h - 1);
     }
     scrollToBar(bar, center) {
       const body = this.body; const namesW = this.names.offsetWidth || 160;

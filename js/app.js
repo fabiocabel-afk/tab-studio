@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '1.11.0';
+  const APP_VERSION = '2.0.0';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Store = window.TabStore;
@@ -74,6 +74,19 @@
   /* ---------------- utilidades ---------------- */
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
   let toastT = 0;
+  const icon = id => '<svg class="i" aria-hidden="true"><use href="#i-' + id + '"/></svg>';
+  /* faixas deslizantes: a parte "cheia" acompanha o valor */
+  function paintRange(el) { if (!el) return; const mn = +el.min || 0, mx = +el.max || 100; el.style.setProperty('--pct', ((+el.value - mn) / (mx - mn) * 100) + '%'); }
+  document.addEventListener('input', e => { if (e.target.type === 'range') paintRange(e.target); });
+  /* tema: escuro (padrão) ou claro */
+  function applyTheme() {
+    const light = prefs.theme === 'light';
+    if (light) document.documentElement.dataset.theme = 'light'; else delete document.documentElement.dataset.theme;
+    const m = document.querySelector('meta[name=theme-color]'); if (m) m.content = light ? '#f3eff8' : '#130d1c';
+    $('btnTheme').innerHTML = icon(light ? 'sun' : 'moon');
+    $('btnTheme').title = light ? 'Mudar para o modo escuro' : 'Mudar para o modo claro';
+    try { tbar.draw(); tbar.drawStrip(); } catch (e) { /* barra ainda não criada */ }
+  }
   function toast(msg, kind, ms) {
     const t = $('toast'); t.textContent = msg; t.className = 'show ' + (kind || '');
     clearTimeout(toastT); toastT = setTimeout(() => { t.className = ''; }, ms || (kind === 'err' ? 6000 : 2600));
@@ -240,7 +253,7 @@
     } catch (e) { /* destaque é opcional */ }
     tbar.setRange([a, b]);
     try { api.tickPosition = R.startTick; } catch (e) { /* nada */ }
-    toast('Trecho: compassos ' + (a + 1) + ' a ' + (b + 1) + (api.isLooping ? ' (repetindo)' : ' — ligue 🔁 para repetir'));
+    toast('Trecho: compassos ' + (a + 1) + ' a ' + (b + 1) + (api.isLooping ? ' (repetindo)' : ' — ligue a repetição para repetir'));
   }
   function renderKeepScroll() {
     S.pendingScroll = { top: viewport.scrollTop, left: viewport.scrollLeft };
@@ -291,7 +304,7 @@
     await Store.set('recent', list.filter(x => x.id !== id)); await Store.del('file:' + id);
     updateRecentButton();
   }
-  async function updateRecentButton() { const n = (await getRecent()).length; $('wRecent').textContent = '🕘 Recentes' + (n ? ' (' + n + ')' : ''); }
+  async function updateRecentButton() { const n = (await getRecent()).length; $('wRecent').innerHTML = icon('clock') + '<span>Recentes' + (n ? ' (' + n + ')' : '') + '</span>'; }
   function fmtSize(n) { return n < 1024 ? n + ' B' : (n / 1024).toFixed(n < 10240 ? 1 : 0).replace('.', ',') + ' KB'; }
   async function recentDialog() {
     const d = $('dlgRecent'), box = $('recentList');
@@ -340,7 +353,7 @@
   api.playerReady.on(() => { S.playerReady = true; $('btnPlay').disabled = false; $('plStatus').textContent = 'Pronto'; });
   api.playerStateChanged.on(e => {
     S.playing = e.state === 1;
-    $('btnPlay').textContent = S.playing ? '⏸' : '▶';
+    $('btnPlay').innerHTML = icon(S.playing ? 'pause' : 'play'); $('btnPlay').classList.toggle('playing', S.playing);
     if (S.playing) { Promise.resolve(Wake.request()).then(m => { $('plStatus').textContent = 'Tocando' + (m !== 'off' ? ' · tela sempre ligada' : ''); }); }
     else { Wake.release(); $('plStatus').textContent = S.playerReady ? 'Pausado' : $('plStatus').textContent; }
     if (S.fb) { if (!S.playing) { S.fb.stopAll(); show3dIdle(); } }
@@ -350,7 +363,7 @@
   api.playerPositionChanged.on(e => {
     S.endTime = e.endTime;
     $('plCur').textContent = fmtTime(e.currentTime); $('plEnd').textContent = fmtTime(e.endTime);
-    if (!S.seeking && e.endTime > 0) $('rngSeek').value = Math.round(e.currentTime / e.endTime * 1000);
+    if (!S.seeking && e.endTime > 0) { $('rngSeek').value = Math.round(e.currentTime / e.endTime * 1000); paintRange($('rngSeek')); }
     loopCycleCheck(e.currentTick);
     S.lastTick = e.currentTick;
   });
@@ -629,6 +642,7 @@
       bm.onclick = () => setMute(t.index);
       bs.onclick = () => setSolo(t.index);
       d.querySelector('.vol input').oninput = ev => { m.vol = ev.target.value / 100; api.changeTrackVolume([t], m.vol); };
+      paintRange(d.querySelector('.vol input'));
       box.appendChild(d);
     });
   }
@@ -1156,7 +1170,7 @@
   }
   async function openDemo() {
     if (S.dirty && !(await confirmDlg('Alterações não salvas', 'Abrir o exemplo vai descartar as alterações não salvas.', 'Descartar e abrir'))) return;
-    try { setScore(buildDemo(), { name: 'Exemplo' }); S.tracks = [0, 1]; render(); buildTrackList(); toast('Exemplo aberto — aperte ▶ e abra o 3D', 'ok'); }
+    try { setScore(buildDemo(), { name: 'Exemplo' }); S.tracks = [0, 1]; render(); buildTrackList(); toast('Exemplo aberto — aperte o play e abra o instrumento', 'ok'); }
     catch (e) { showMsg('Erro no exemplo', esc(e.message)); }
   }
   function infoDialog() {
@@ -1182,7 +1196,7 @@
   /* ---------------- instrumento na tela (braço/teclado, 2D/3D) ---------------- */
   const VIZ_MODS = {
     neck3d: { file: './fretboard3d.js', cls: 'Fretboard3D', canvas: 'canvas3d', label: 'Braço 3D', views: [['player', 'Visão do músico', 'Músico'], ['top', 'Topo', 'Topo'], ['full', 'Braço inteiro', 'Inteiro']] },
-    neck2d: { file: './fretboard2d.js', cls: 'Fretboard2D', canvas: 'canvasN2d', label: 'Braço 2D', views: [['focus7', 'Foco 7 casas', '7 casas'], ['focus10', 'Foco 10 casas', '10 casas'], ['full', 'Braço inteiro', 'Inteiro']] },
+    neck2d: { file: './fretboard2d.js', cls: 'Fretboard2D', canvas: 'canvasN2d', label: 'Braço 2D', views: [['focus7', '7 casas', '7'], ['focus10', '10 casas', '10'], ['focus12', '12 casas', '12'], ['focus15', '15 casas', '15'], ['full', 'Braço inteiro', 'Todo']] },
     keys3d: { file: './keyboard3d.js', cls: 'Keyboard3D', canvas: 'canvasK3d', label: 'Teclado 3D', views: [['player', 'Visão do músico', 'Músico'], ['top', 'Topo', 'Topo'], ['full', 'Teclado inteiro', 'Inteiro']] },
     keys2d: { file: './keyboard2d.js', cls: 'Keyboard2D', canvas: 'canvasK2d', label: 'Teclado 2D', views: [['range', 'Faixa tocada', 'Faixa'], ['hands', 'Duas mãos', '2 mãos'], ['full', 'Teclado inteiro', 'Inteiro']] },
     drum3d: { file: './drums3d.js', cls: 'Drums3D', canvas: 'canvasD3d', label: 'Bateria 3D', views: [['player', 'Visão do baterista', 'Baterista'], ['front', 'De frente', 'Frente'], ['top', 'De cima', 'De cima']] },
@@ -1252,7 +1266,7 @@
   }
   /* listas compactas: fechadas mostram a abreviação (cabem numa linha); abertas mostram o nome completo */
   function compactSelect(sel) {
-    const narrow = () => window.innerWidth < 560;
+    const narrow = () => window.innerWidth < 360;
     const full = o => (o.dataset.full != null ? o.dataset.full : (o.dataset.full = o.textContent));
     sel._compact = () => { [...sel.options].forEach(o => { full(o); o.textContent = (narrow() && o.dataset.tiny) || o.dataset.short || o.dataset.full; }); };
     sel._expand = () => { [...sel.options].forEach(o => { o.textContent = full(o); }); };
@@ -1295,8 +1309,15 @@
     const M = VIZ_MODS[mode];
     const view = M.views.some(v => v[0] === prefs.vizViews[mode]) ? prefs.vizViews[mode] : M.views[0][0];
     const viewItems = M.views.map(v => [v[0], v[1], false, v[2]]);
-    if (mode.startsWith('neck')) { viewItems.push(['', '──────────', true, '─']); viewItems.push(['__flip', (prefs.flip ? '✓ ' : '') + 'Cordas invertidas', false, (prefs.flip ? '✓ ' : '') + 'Invertidas']); }
     fillSelect($('selVizView'), viewItems, view);
+    // braço 2D: as casas vão nos botões (7 · 10 · 12 · 15 · Todo); braço 2D e 3D: "Inverter cordas" é um interruptor
+    $('selVizView').hidden = mode === 'neck2d';
+    $('p3dOpts').hidden = !mode.startsWith('neck');
+    $('segFrets').hidden = $('segFretsLbl').hidden = mode !== 'neck2d';
+    for (const b of $('segFrets').children) b.classList.toggle('on', b.dataset.v === view);
+    $('chkFlip').checked = !!prefs.flip;
+    for (const o of $('selVizKind').options) o.dataset.icon = { neck: 'guitar', keys: 'keys', drum: 'drum' }[o.value] || '';
+    $('selVizKind').value = $('selVizKind').value;
     Object.entries(VIZ_MODS).forEach(([k, X]) => { $(X.canvas).hidden = k !== mode; if (k !== mode && S.viz[k]) S.viz[k].setVisible(false); });
     releaseViz(mode);
     $('p3dMsg').textContent = S.viz[mode] ? '' : 'Carregando…';
@@ -1325,9 +1346,18 @@
   }
   $('selVizKind').onchange = () => setVizMode($('selVizKind').value + $('selVizDim').value);
   $('selVizDim').onchange = () => setVizMode($('selVizKind').value + $('selVizDim').value);
+  $('segFrets').onclick = e => {
+    const b = e.target.closest('button[data-v]'); if (!b || S.vizMode !== 'neck2d') return;
+    $('selVizView').value = b.dataset.v; $('selVizView').onchange();
+    for (const x of $('segFrets').children) x.classList.toggle('on', x === b);
+  };
+  $('chkFlip').onchange = () => {
+    prefs.flip = $('chkFlip').checked; savePrefs();
+    for (const i of Object.values(S.viz)) { if (i.setFlip) i.setFlip(prefs.flip); i._tsKey = null; }
+    sync3d();
+  };
   $('selVizView').onchange = () => {
     const v = $('selVizView').value, mode = S.vizMode; if (!mode) return;
-    if (v === '__flip') { prefs.flip = !prefs.flip; savePrefs(); Object.values(S.viz).forEach(i => { i._tsKey = null; }); sync3d(); return; }
     prefs.vizViews[mode] = v; savePrefs();
     const inst = S.viz[mode]; if (inst) { inst._view = v; inst.setCamera(v); show3dIdle(); }
   };
@@ -1337,7 +1367,9 @@
   if (!prefs.previewV2) { prefs.previewV2 = true; savePrefs(); }
   $('selVizPrev').value = String(prefs.preview);
   [$('selVizKind'), $('selVizDim'), $('selVizView'), $('selVizPrev')].forEach(compactSelect);
-  $('selVizPrev').onchange = () => { prefs.preview = $('selVizPrev').value; savePrefs(); if (S.fb && prefs.preview === '0' && S.fb.setPreview) S.fb.setPreview([]); };
+  const prevAccent = () => { $('selVizPrev').dataset.cs = prefs.preview !== '0' ? 'accent' : ''; };
+  prevAccent();
+  $('selVizPrev').onchange = () => { prefs.preview = $('selVizPrev').value; savePrefs(); prevAccent(); if (S.fb && prefs.preview === '0' && S.fb.setPreview) S.fb.setPreview([]); };
   function toggle3d(force) {
     const p = $('panel3d');
     const on = force === undefined ? p.hidden : force;
@@ -1382,6 +1414,10 @@
   $('selStave').onchange = () => { prefs.stave = $('selStave').value; applyDisplay(); };
   $('selLayout').onchange = () => { prefs.layout = $('selLayout').value; applyDisplay(); };
   $('rngZoom').oninput = () => { $('zoomVal').textContent = $('rngZoom').value + '%'; };
+  ['rngZoom', 'rngVol', 'rngSeek'].forEach(id => paintRange($(id)));
+  $('rngZoom').classList.add('purple'); $('rngVol').classList.add('purple');
+  applyTheme();
+  $('btnTheme').onclick = () => { prefs.theme = prefs.theme === 'light' ? 'dark' : 'light'; savePrefs(); applyTheme(); };
   $('rngZoom').onchange = () => { prefs.zoom = +$('rngZoom').value; applyDisplay(); };
   $('chkFollow').onchange = () => { prefs.follow = $('chkFollow').checked; applyDisplay(); };
 

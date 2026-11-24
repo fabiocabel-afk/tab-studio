@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Tab Studio</title>
-<meta name="theme-color" content="#16141c">
+<meta name="theme-color" content="#130d1c">
+<script>try { if ((JSON.parse(localStorage.getItem('tabstudio.prefs') || '{}').theme) === 'light') document.documentElement.dataset.theme = 'light'; } catch (e) {}</script>
 <meta name="description" content="Leitor, player e editor de tablaturas e partituras (Guitar Pro 3 a 8, MusicXML).">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
@@ -13,43 +14,83 @@
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.js" } }</script>
 </head>
 <body>
+<svg xmlns="http://www.w3.org/2000/svg" style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 17.2V20h2.8l9.4-9.4-2.8-2.8zM18.7 8.1a1 1 0 000-1.4l-1.4-1.4a1 1 0 00-1.4 0l-1.2 1.2 2.8 2.8z"/></symbol>
+  <symbol id="i-guitar" viewBox="0 0 24 24"><path d="M20.6 3.4l-2.1-.1-.1 1-3.9 3.9a4.7 4.7 0 00-3.1.6c-.9.5-1.3 1.6-2 2.3-.7.7-2.4.4-3.6 1.6-1.7 1.7-1.4 4.7.6 6.7s5 2.3 6.7.6c1.2-1.2.9-2.9 1.6-3.6.7-.7 1.8-1.1 2.3-2 .5-1 .7-2.1.6-3.1l3.9-3.9 1-.1-.1-2.1zM9.2 16.3a1.5 1.5 0 110-2.1 1.5 1.5 0 010 2.1z"/></symbol>
+  <symbol id="i-mixer" viewBox="0 0 24 24"><path d="M6 3h2v6h2v3H8v9H6v-9H4V9h2zM16 3h2v9h2v3h-2v6h-2v-6h-2v-3h2zM11 3h2v3h2v3h-2v12h-2V9H9V6h2z"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M12 5C6.5 5 2.7 9.2 1.5 12c1.2 2.8 5 7 10.5 7s9.3-4.2 10.5-7C21.3 9.2 17.5 5 12 5zm0 11a4 4 0 110-8 4 4 0 010 8zm0-6a2 2 0 100 4 2 2 0 000-4z"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 5.5l7.5 9.5h-15z"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 18.5L4.5 9h15z"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6.5h16v2.4H4zM4 10.8h16v2.4H4zM4 15.1h16v2.4H4z"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M14.5 3a8.5 8.5 0 104.7 15.6A9.5 9.5 0 0114.5 3z"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><path d="M12 7a5 5 0 110 10 5 5 0 010-10zM11 1h2v3h-2zM11 20h2v3h-2zM1 11h3v2H1zM20 11h3v2h-3zM4.2 5.6l1.4-1.4 2.1 2.1-1.4 1.4zM16.3 17.7l1.4-1.4 2.1 2.1-1.4 1.4zM4.2 18.4l2.1-2.1 1.4 1.4-2.1 2.1zM16.3 6.3l2.1-2.1 1.4 1.4-2.1 2.1z"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M5 5h2.4v14H5zM19 5v14l-6.4-7zM12.6 5v14L6.2 12z"/></symbol>
+  <symbol id="i-prev" viewBox="0 0 24 24"><path d="M12 5v14L4 12zM20.5 5v14l-8-7z"/></symbol>
+  <symbol id="i-next" viewBox="0 0 24 24"><path d="M12 5v14l8-7zM3.5 5v14l8-7z"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.2v13.6L19 12z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M6.5 5h4v14h-4zM13.5 5h4v14h-4z"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><path d="M6.5 6.5h11v11h-11z"/></symbol>
+  <symbol id="i-loop" viewBox="0 0 24 24"><path d="M7 7h9.2l-1.6-1.6L16 4l4 4-4 4-1.4-1.4L16.2 9H7a2 2 0 00-2 2v1H3v-1a4 4 0 014-4zm10 10H7.8l1.6 1.6L8 20l-4-4 4-4 1.4 1.4L7.8 15H17a2 2 0 002-2v-1h2v1a4 4 0 01-4 4z"/></symbol>
+  <symbol id="i-metro" viewBox="0 0 24 24"><path d="M9.5 3h5l4.3 17H5.2zM11 6l-1.8 8h2.3l3.3-5.3-.8-2.7zM15.6 4.6l1.3-1.3 1.4 1.4-1.4 1.4z"/></symbol>
+  <symbol id="i-vol" viewBox="0 0 24 24"><path d="M3 9h4l5-4v14l-5-4H3zM15 8.5a5 5 0 010 7l-1.4-1.4a3 3 0 000-4.2zM17.8 5.7a9 9 0 010 12.6l-1.4-1.4a7 7 0 000-9.8z"/></symbol>
+  <symbol id="i-speed" viewBox="0 0 24 24"><path d="M12 4a9 9 0 00-7.8 13.5l1.7-1A7 7 0 1119 12h2a9 9 0 00-9-8zm4.6 3.3l-5.2 5.2a1.5 1.5 0 102.1 2.1l3.7-6.6zM3 19h18v2H3z"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6.4 5L12 10.6 17.6 5 19 6.4 13.4 12l5.6 5.6-1.4 1.4-5.6-5.6L6.4 19 5 17.6 10.6 12 5 6.4z"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M7 9.5l5 5 5-5z"/></symbol>
+  <symbol id="i-chevr" viewBox="0 0 24 24"><path d="M9.5 7l5 5-5 5z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M9.5 16.2L5.3 12l-1.4 1.4 5.6 5.6L20.1 8.4 18.7 7z"/></symbol>
+  <symbol id="i-flip" viewBox="0 0 24 24"><path d="M7 4l-4 4 4 4V9h10V7H7zm10 8v3H7v2h10v3l4-4z"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 5h7l2 2h9v12H3z"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><path d="M12 2a10 10 0 110 20 10 10 0 010-20zm-1 5v6.4l5 3 1-1.7-4-2.4V7z"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M10.8 4h2.4v6.8H20v2.4h-6.8V20h-2.4v-6.8H4v-2.4h6.8z"/></symbol>
+  <symbol id="i-save" viewBox="0 0 24 24"><path d="M4 3h13l4 4v14H3V3zm3 2v5h9V5zm5 8a3 3 0 100 6 3 3 0 000-6z"/></symbol>
+  <symbol id="i-saveas" viewBox="0 0 24 24"><path d="M4 3h11l3 3v4h-2V7H6v4h7v2H5V3zM3 3v18h9v-2H5V3zM17 12h2v4h4v2h-4v4h-2v-4h-4v-2h4z"/></symbol>
+  <symbol id="i-keys" viewBox="0 0 24 24"><path d="M3 5h18v14H3zm2 2v10h2.5v-4H6.8V7zm4.3 0v6h-.7v4h2.8v-4h-.7V7zm3.4 0v6H12v4h2.8v-4h-.7V7zm3.4 0v6h-.7v4H19V7z"/></symbol>
+  <symbol id="i-drum" viewBox="0 0 24 24"><path d="M12 4c-4.4 0-8 1.6-8 3.5v9c0 1.9 3.6 3.5 8 3.5s8-1.6 8-3.5v-9C20 5.6 16.4 4 12 4zm0 2c3.6 0 6 1 6 1.5S15.6 9 12 9 6 8 6 7.5 8.4 6 12 6z"/></symbol>
+  <symbol id="i-print" viewBox="0 0 24 24"><path d="M6 3h12v5H6zM4 9h16a2 2 0 012 2v6h-4v4H6v-4H2v-6a2 2 0 012-2zm4 7v3h8v-3z"/></symbol>
+  <symbol id="i-note" viewBox="0 0 24 24"><path d="M10 3h11v4h-7v10a4 4 0 11-2-3.5V3z"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><path d="M12 2a10 10 0 110 20 10 10 0 010-20zm-1.2 8v8h2.4v-8zm1.2-4a1.5 1.5 0 100 3 1.5 1.5 0 000-3z"/></symbol>
+  <symbol id="i-keyboard" viewBox="0 0 24 24"><path d="M2 6h20v12H2zm2 2v2h2V8zm3 0v2h2V8zm3 0v2h2V8zm3 0v2h2V8zm3 0v2h2V8zM4 11v2h2v-2zm3 0v2h2v-2zm3 0v2h2v-2zm3 0v2h2v-2zm3 0v2h2v-2zM7 14v2h10v-2z"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><path d="M12 2a10 10 0 110 20 10 10 0 010-20zm-1.2 14v2.4h2.4V16zM12 5.5a4 4 0 00-4 4h2.3A1.7 1.7 0 1112 11c-1 0-1.2.8-1.2 1.6V14h2.4v-.8a4 4 0 00-1.2-7.7z"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M9 3h6l1 2h4v2H4V5h4zM6 8h12l-1 13H7z"/></symbol>
+  <symbol id="i-paste" viewBox="0 0 24 24"><path d="M9 2h6v3H9zM5 4h3v3h8V4h3v17H5z"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><path d="M8 3h12v13H8zM4 7h2v12h10v2H4z"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M7.4 7H14a6 6 0 010 12H8v-2.4h6a3.6 3.6 0 000-7.2H7.4l3 3-1.7 1.7L2.8 8.2 8.7 2.3l1.7 1.7z"/></symbol>
+  <symbol id="i-redo" viewBox="0 0 24 24"><path d="M16.6 7H10a6 6 0 000 12h6v-2.4h-6a3.6 3.6 0 010-7.2h6.6l-3 3 1.7 1.7 5.9-5.9-5.9-5.9-1.7 1.7z"/></symbol>
+  <symbol id="i-select" viewBox="0 0 24 24"><path d="M3 5h3v2H5v1H3zm5 0h3v2H8zm5 0h3v2h-3zm5 0h3v3h-2V7h-1zM3 10h2v4H3zm16 0h2v4h-2zM3 16h2v1h1v2H3zm5 1h3v2H8zm5 0h3v2h-3zm6-1h2v3h-3v-2h1z"/></symbol>
+</svg>
 <div id="app">
 
   <!-- Barra superior -->
   <header id="topbar">
-    <div class="brand" title="Tab Studio">
-      <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true"><rect x="2" y="2" width="28" height="28" rx="7" fill="#f2a33a"/><g stroke="#16141c" stroke-width="1.6"><line x1="7" y1="10" x2="25" y2="10"/><line x1="7" y1="14" x2="25" y2="14"/><line x1="7" y1="18" x2="25" y2="18"/><line x1="7" y1="22" x2="25" y2="22"/></g><circle cx="13" cy="14" r="2.6" fill="#16141c"/><circle cx="19" cy="18" r="2.6" fill="#16141c"/></svg>
-      <span>Tab Studio</span>
-    </div>
+    <div class="brand" title="Tab Studio"><div class="logo"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="#fff" opacity=".5" d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/><circle cx="9" cy="7" r="2.6" fill="#FF9901"/><circle cx="15" cy="12" r="2.6" fill="#fff"/><circle cx="7" cy="17" r="2.6" fill="#99CC33"/></svg></div><span>Tab Studio</span></div>
     <div class="song-title" id="songTitle">—</div>
     <nav class="tb-group">
-      <button class="tb toggle" id="btnEdit" title="Modo edição (E)"><i>✎</i><span>Editar</span></button>
-      <button class="tb toggle" id="btn3d" title="Instrumento na tela (braço / teclado)"><i>🎸</i><span>Instrumento</span></button>
-      <button class="tb toggle" id="btnTracks" title="Trilhas e mixer"><i>🎚</i><span>Trilhas</span></button>
-      <button class="tb toggle" id="btnView" title="Visualização"><i>👁</i><span>Ver</span></button>
-      <button class="tb" id="btnTrkUp" title="Instrumento anterior (trilha de cima)"><i><svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path fill="currentColor" d="M12 5l8 11H4z"/></svg></i><span>Anterior</span></button>
-      <button class="tb" id="btnTrkDown" title="Próximo instrumento (trilha de baixo)"><i><svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path fill="currentColor" d="M12 19L4 8h16z"/></svg></i><span>Próximo</span></button>
+      <button class="tb toggle" id="btnEdit" title="Modo edição (E)"><i><svg class="i" aria-hidden="true"><use href="#i-edit"/></svg></i><span>Editar</span></button>
+      <button class="tb toggle" id="btn3d" title="Instrumento na tela (braço, teclado ou bateria)"><i><svg class="i" aria-hidden="true"><use href="#i-guitar"/></svg></i><span>Instrumento</span></button>
+      <button class="tb toggle" id="btnTracks" title="Trilhas e mixer"><i><svg class="i" aria-hidden="true"><use href="#i-mixer"/></svg></i><span>Trilhas</span></button>
+      <button class="tb toggle" id="btnView" title="Visualização"><i><svg class="i" aria-hidden="true"><use href="#i-eye"/></svg></i><span>Ver</span></button>
+      <button class="tb" id="btnTrkUp" title="Instrumento anterior (trilha de cima)"><i><svg class="i" aria-hidden="true"><use href="#i-up"/></svg></i><span>Anterior</span></button>
+      <button class="tb" id="btnTrkDown" title="Próximo instrumento (trilha de baixo)"><i><svg class="i" aria-hidden="true"><use href="#i-down"/></svg></i><span>Próximo</span></button>
     </nav>
-    <button class="tb burger" id="btnMore" title="Menu" aria-label="Menu" aria-haspopup="true">
-      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><rect x="3" y="5" width="18" height="2.2" rx="1.1" fill="currentColor"/><rect x="3" y="10.9" width="18" height="2.2" rx="1.1" fill="currentColor"/><rect x="3" y="16.8" width="18" height="2.2" rx="1.1" fill="currentColor"/></svg>
-    </button>
+    <button class="tb round" id="btnTheme" title="Modo claro / escuro" aria-label="Modo claro / escuro"><svg class="i" aria-hidden="true"><use href="#i-moon"/></svg></button>
+    <button class="tb burger" id="btnMore" title="Menu" aria-label="Menu" aria-haspopup="true"><svg class="i" aria-hidden="true"><use href="#i-menu"/></svg></button>
     <input type="file" id="fileInput" accept=".gp,.gp3,.gp4,.gp5,.gpx,.musicxml,.mxl,.xml,.capx,.tex,.txt" hidden>
   </header>
 
   <!-- Menu "Mais" -->
   <div class="menu" id="menuMore" hidden>
-    <button data-act="open">📂 Abrir arquivo… <kbd>Ctrl+O</kbd></button>
-    <button data-act="recent">🕘 Arquivos recentes</button>
-    <button data-act="new">✚ Nova música</button>
-    <button data-act="save">💾 Salvar <kbd>Ctrl+S</kbd></button>
+    <button data-act="open"><svg class="i" aria-hidden="true"><use href="#i-folder"/></svg><span>Abrir arquivo…</span><kbd>Ctrl+O</kbd></button>
+    <button data-act="recent"><svg class="i" aria-hidden="true"><use href="#i-clock"/></svg><span>Arquivos recentes</span></button>
+    <button data-act="new"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg><span>Nova música</span></button>
+    <button data-act="save"><svg class="i" aria-hidden="true"><use href="#i-save"/></svg><span>Salvar</span><kbd>Ctrl+S</kbd></button>
     <hr>
-    <button data-act="saveAs">💾 Salvar como .gp…</button>
-    <button data-act="midi">🎹 Exportar MIDI</button>
-    <button data-act="print">🖨 Imprimir / PDF</button>
-    <button data-act="demo">🎵 Abrir exemplo</button>
-    <button data-act="info">ℹ️ Informações da música</button>
-    <button data-act="shortcuts">⌨️ Atalhos do editor</button>
-    <button data-act="about">❔ Sobre</button>
+    <button data-act="saveAs"><svg class="i" aria-hidden="true"><use href="#i-saveas"/></svg><span>Salvar como .gp…</span></button>
+    <button data-act="midi"><svg class="i" aria-hidden="true"><use href="#i-keys"/></svg><span>Exportar MIDI</span></button>
+    <button data-act="print"><svg class="i" aria-hidden="true"><use href="#i-print"/></svg><span>Imprimir / PDF</span></button>
+    <button data-act="demo"><svg class="i" aria-hidden="true"><use href="#i-note"/></svg><span>Abrir exemplo</span></button>
+    <button data-act="info"><svg class="i" aria-hidden="true"><use href="#i-info"/></svg><span>Informações da música</span></button>
+    <button data-act="shortcuts"><svg class="i" aria-hidden="true"><use href="#i-keyboard"/></svg><span>Atalhos do editor</span></button>
+    <button data-act="about"><svg class="i" aria-hidden="true"><use href="#i-help"/></svg><span>Sobre</span></button>
     <div class="menu-ver" id="menuVer"></div>
   </div>
 
@@ -78,24 +119,25 @@
   <main id="main">
     <!-- Painel de trilhas -->
     <aside id="tracksPanel" class="side" hidden>
-      <div class="side-head"><b>Trilhas</b><button class="x" data-close="tracksPanel">✕</button></div>
+      <div class="side-head"><b>Trilhas</b><button class="x" data-close="tracksPanel" title="Fechar"><svg class="i" aria-hidden="true"><use href="#i-close"/></svg></button></div>
       <div id="trackList"></div>
       <div class="side-foot edit-only">
         <select id="selNewTrack"></select>
-        <button class="btn" id="btnAddTrack">+ Adicionar trilha</button>
+        <button class="btn" id="btnAddTrack"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg>Adicionar trilha</button>
       </div>
     </aside>
 
     <section id="center">
       <div id="welcome">
         <div class="welcome-card">
+          <div class="logo-big"><svg viewBox="0 0 24 24" width="44" height="44" aria-hidden="true"><path fill="#fff" opacity=".5" d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/><circle cx="9" cy="7" r="2.6" fill="#FF9901"/><circle cx="15" cy="12" r="2.6" fill="#fff"/><circle cx="7" cy="17" r="2.6" fill="#99CC33"/></svg></div>
           <h1>Tab Studio</h1>
           <p>Abra tablaturas do Guitar Pro (GP3, GP4, GP5, GPX, GP7/8) ou MusicXML, toque, edite, componha e imprima — tudo no navegador, funcionando offline.</p>
           <div class="welcome-actions">
-            <button class="btn big primary" id="wOpen">📂 Abrir arquivo</button>
-            <button class="btn big" id="wNew">✚ Nova música</button>
-            <button class="btn big" id="wRecent">🕘 Recentes</button>
-            <button class="btn big" id="wDemo">🎵 Exemplo</button>
+            <button class="btn big primary" id="wOpen"><svg class="i" aria-hidden="true"><use href="#i-folder"/></svg>Abrir arquivo</button>
+            <button class="btn big" id="wNew"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg>Nova música</button>
+            <button class="btn big" id="wRecent"><svg class="i" aria-hidden="true"><use href="#i-clock"/></svg><span>Recentes</span></button>
+            <button class="btn big" id="wDemo"><svg class="i" aria-hidden="true"><use href="#i-note"/></svg>Exemplo</button>
           </div>
           <div id="draftBox" hidden></div>
           <p class="hint">Dica: arraste um arquivo para esta janela.</p>
@@ -118,7 +160,14 @@
             <option value="4" data-short="Prévia 4" data-tiny="P4">4 · Prévia: 3 compassos à frente</option>
           </select>
           <span class="p3d-msg" id="p3dMsg"></span>
-          <button class="x" data-close3d title="Fechar">✕</button>
+          <button class="x" data-close3d title="Fechar"><svg class="i" aria-hidden="true"><use href="#i-close"/></svg></button>
+        </div>
+        <div class="p3d-opts" id="p3dOpts" hidden>
+          <span class="lbl" id="segFretsLbl">Casas</span>
+          <div class="seg" id="segFrets" role="group" aria-label="Quantas casas mostrar">
+            <button type="button" data-v="focus7">7</button><button type="button" data-v="focus10">10</button><button type="button" data-v="focus12">12</button><button type="button" data-v="focus15">15</button><button type="button" data-v="full" title="Braço inteiro">Todo</button>
+          </div>
+          <label class="sw" title="Inverter a ordem das cordas (agudas embaixo / em cima)"><svg class="i" aria-hidden="true"><use href="#i-flip"/></svg><span class="sw-txt">Inverter cordas</span><input type="checkbox" id="chkFlip"><span class="knob"></span></label>
         </div>
         <div id="vizStage">
           <canvas id="canvas3d" data-mode="neck3d"></canvas>
@@ -174,8 +223,8 @@
           <button class="btn sm danger" data-ed="delBeat" title="Apagar batida (Shift+Del)">− batida</button>
           <button class="btn sm" data-ed="insBar" title="Novo compasso depois">+ compasso</button>
           <button class="btn sm danger" data-ed="delBar" title="Apagar compasso">− compasso</button>
-          <button class="btn sm" data-ed="copyBar" title="Copiar compasso (Ctrl+C)">⧉ copiar</button>
-          <button class="btn sm" data-ed="pasteBar" title="Colar no compasso (Ctrl+V)">📋 colar</button>
+          <button class="btn sm" data-ed="copyBar" title="Copiar compasso (Ctrl+C)"><svg class="i" aria-hidden="true"><use href="#i-copy"/></svg>copiar</button>
+          <button class="btn sm" data-ed="pasteBar" title="Colar no compasso (Ctrl+V)"><svg class="i" aria-hidden="true"><use href="#i-paste"/></svg>colar</button>
           <button class="btn sm" data-ed="repStart" title="Início de repetição">𝄆</button>
           <button class="btn sm" data-ed="repEnd" title="Fim de repetição">𝄇</button>
         </div>
@@ -212,9 +261,9 @@
         <div class="row"><select id="selTuning"></select><button class="btn sm" id="btnApplyTuning">Aplicar</button></div>
       </div>
       <div class="ed-section row">
-        <button class="btn sm" id="btnUndo" title="Desfazer (Ctrl+Z)">↶ Desfazer</button>
-        <button class="btn sm" id="btnRedo" title="Refazer (Ctrl+Y)">↷ Refazer</button>
-        <button class="btn sm danger edit-only" id="btnDelTrack" title="Remover esta trilha">🗑 trilha</button>
+        <button class="btn sm" id="btnUndo" title="Desfazer (Ctrl+Z)"><svg class="i" aria-hidden="true"><use href="#i-undo"/></svg>Desfazer</button>
+        <button class="btn sm" id="btnRedo" title="Refazer (Ctrl+Y)"><svg class="i" aria-hidden="true"><use href="#i-redo"/></svg>Refazer</button>
+        <button class="btn sm danger edit-only" id="btnDelTrack" title="Remover esta trilha"><svg class="i" aria-hidden="true"><use href="#i-trash"/></svg>trilha</button>
       </div>
     </aside>
   </main>
@@ -228,30 +277,26 @@
     <div class="pl-row">
       <div class="pl-left"><span class="pl-status" id="plStatus"></span></div>
       <div class="pl-center">
-        <button class="pb ic" id="btnHome" title="Voltar ao início"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M5 5h2.4v14H5zM19 5v14l-6.2-7zM12.6 5v14L6.4 12z"/></svg></button>
-        <button class="pb ic" id="btnPrevSys" title="Pauta anterior"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 5v14L4 12zM20.5 5v14l-8-7z"/></svg></button>
-        <button class="pb main" id="btnPlay" title="Tocar / pausar (Espaço)" disabled>▶</button>
-        <button class="pb ic" id="btnNextSys" title="Próxima pauta"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 5v14l8-7zM3.5 5v14l8-7z"/></svg></button>
-        <button class="pb ic" id="btnStop" title="Parar"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M6 6h12v12H6z"/></svg></button>
+        <div class="grp"><button class="pb l1" id="btnHome" title="Voltar ao início"><svg class="i" aria-hidden="true"><use href="#i-home"/></svg></button><button class="pb l2" id="btnPrevSys" title="Pauta anterior"><svg class="i" aria-hidden="true"><use href="#i-prev"/></svg></button></div>
+        <button class="pb main" id="btnPlay" title="Tocar / pausar (Espaço)" disabled><svg class="i" aria-hidden="true"><use href="#i-play"/></svg></button>
+        <div class="grp"><button class="pb r1" id="btnNextSys" title="Próxima pauta"><svg class="i" aria-hidden="true"><use href="#i-next"/></svg></button><button class="pb r2" id="btnStop" title="Parar"><svg class="i" aria-hidden="true"><use href="#i-stop"/></svg></button></div>
       </div>
       <div class="pl-right">
-        <label class="pl-ctl" title="Velocidade">⏱
-          <select id="selSpeed">
-            <option value="0.25">25%</option><option value="0.5">50%</option><option value="0.6">60%</option><option value="0.7">70%</option><option value="0.8">80%</option><option value="0.9">90%</option><option value="1" selected>100%</option><option value="1.1">110%</option><option value="1.25">125%</option><option value="1.5">150%</option>
-          </select>
-        </label>
-        <button class="pb tog" id="btnLoop" title="Repetir um trecho">🔁</button>
-        <button class="pb tog" id="btnMetro" title="Metrônomo">🥁</button>
-        <button class="pb tog" id="btnCountIn" title="Contagem antes de tocar">1·2</button>
-        <button class="pb" id="btnClearSel" title="Limpar trecho selecionado">⨯ trecho</button>
-        <label class="pl-ctl" title="Volume geral">🔊 <input type="range" id="rngVol" min="0" max="100" value="80"></label>
+        <select id="selSpeed" title="Velocidade" data-icon="speed">
+          <option value="0.25">25%</option><option value="0.5">50%</option><option value="0.6">60%</option><option value="0.7">70%</option><option value="0.8">80%</option><option value="0.9">90%</option><option value="1" selected>100%</option><option value="1.1">110%</option><option value="1.25">125%</option><option value="1.5">150%</option>
+        </select>
+        <button class="pb sq tog" id="btnLoop" title="Repetir um trecho"><svg class="i" aria-hidden="true"><use href="#i-loop"/></svg></button>
+        <button class="pb sq tog" id="btnMetro" title="Metrônomo"><svg class="i" aria-hidden="true"><use href="#i-metro"/></svg></button>
+        <button class="pb sq tog" id="btnCountIn" title="Contagem antes de tocar">1·2</button>
+        <button class="pb sq" id="btnClearSel" title="Limpar trecho selecionado"><svg class="i" aria-hidden="true"><use href="#i-select"/></svg></button>
+        <label class="pl-ctl vol" title="Volume geral"><svg class="i" aria-hidden="true"><use href="#i-vol"/></svg><input type="range" id="rngVol" min="0" max="100" value="80"></label>
       </div>
     </div>
   </footer>
 
   <!-- Painel de repetição -->
   <div class="loop-panel" id="loopPanel" hidden>
-    <div class="lp-head"><b>🔁 Repetir trecho</b><button class="x" id="lpClose" title="Fechar">✕</button></div>
+    <div class="lp-head"><b><svg class="i" aria-hidden="true"><use href="#i-loop"/></svg>Repetir trecho</b><button class="x" id="lpClose" title="Fechar"><svg class="i" aria-hidden="true"><use href="#i-close"/></svg></button></div>
     <div class="lp-row">
       <label>Início <input type="number" id="lpStart" min="1" value="1" inputmode="numeric"></label>
       <label>Fim <input type="number" id="lpEnd" min="1" value="4" inputmode="numeric"></label>
@@ -302,7 +347,7 @@
   </dialog>
   <dialog id="dlgRecent">
     <form method="dialog">
-      <h3>🕘 Arquivos recentes</h3>
+      <h3><svg class="i" aria-hidden="true"><use href="#i-clock"/></svg>Arquivos recentes</h3>
       <div id="recentList"></div>
       <menu><button type="button" class="btn danger" id="recentClear">Limpar lista</button><button value="ok" class="btn primary">Fechar</button></menu>
     </form>
@@ -320,6 +365,7 @@
 <script src="js/tabops.js"></script>
 <script src="js/store.js"></script>
 <script src="js/wake.js"></script>
+<script src="js/csel.js"></script>
 <script src="js/trackbar.js"></script>
 <script src="js/app.js"></script>
 </body>

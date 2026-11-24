@@ -26,9 +26,9 @@ export class Fretboard2D {
     this._loop = this._loop.bind(this); this._last = performance.now();
     requestAnimationFrame(this._loop);
   }
-  span() { return this.view === 'focus10' ? 10 : (this.view === 'full' ? MAXF : 7); }
+  span() { const m = /^focus(\d+)$/.exec(this.view); return m ? +m[1] : MAXF; }
   setView(v) {
-    this.view = ['focus7', 'focus10', 'full'].includes(v) ? v : 'focus7';
+    this.view = ['focus7', 'focus10', 'focus12', 'focus15', 'full'].includes(v) ? v : 'focus7';
     if (this.view === 'full') { this.goal = 0; this.w = 0; }
     else this.goal = Math.min(this.goal, MAXF - this.span());
     this.dirty = true;
