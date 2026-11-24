@@ -621,6 +621,13 @@
       return rep;
     }
 
-    return { openLibrary, addCurrent, usesFile, leaving, onFinished, onSaved, updateBar, isRepZip, importBytes, list, openItem, step, buildExport, readZip, flush: flushSettings, createRep, addItem };
+    // botão voltar do celular dentro da janela Músicas: volta um nível (adicionar → repertório → lista)
+    function back() {
+      if (!$('dlgLib').open) return false;
+      if (L.adding) { L.adding = false; renderLib(); return true; }
+      if (L.repId) { L.repId = null; renderLib(); return true; }
+      return false;
+    }
+    return { back, openLibrary, addCurrent, usesFile, leaving, onFinished, onSaved, updateBar, isRepZip, importBytes, list, openItem, step, buildExport, readZip, flush: flushSettings, createRep, addItem };
   };
 })(window);

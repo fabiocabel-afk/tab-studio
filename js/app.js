@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '2.2.2';
+  const APP_VERSION = '2.2.3';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Store = window.TabStore;
@@ -1577,6 +1577,50 @@
     openFilePicker: () => $('fileInput').click(), newSong: () => newSongDialog()
   });
   $('btnLib').onclick = () => Rep.openLibrary();
+
+  /* ---------------- botão "voltar" do celular ----------------
+     Mantém uma entrada extra no histórico: cada "voltar" fecha a camada de cima
+     (lista aberta, menu, janela, painel, modo edição) sem sair do app nem parar a música.
+     Sem nada aberto, pergunta se quer sair; só sai tocando em "Sair". */
+  if (!FRAMED && history.pushState) {
+    let exiting = false;
+    const guard = () => { try { history.pushState({ tabstudio: 1 }, ''); } catch (e) { /* sem histórico */ } };
+    const closeTop = () => {
+      if (window.CustomSelect && CustomSelect.isOpen()) { CustomSelect.close(); return true; }
+      if (!$('menuMore').hidden || !$('viewPanel').hidden) { closePopups(); return true; }
+      const ds = [...document.querySelectorAll('dialog[open]')];
+      if (ds.length) {
+        const d = ds[ds.length - 1];
+        if (d.id === 'dlgLib' && Rep.back()) return true;
+        d.close('cancel'); return true;
+      }
+      if (!$('tracksPanel').hidden) { $('tracksPanel').hidden = true; $('btnTracks').classList.remove('on'); return true; }
+      if (S.edit) { toggleEdit(false); return true; }
+      if (!$('panel3d').hidden) { toggle3d(false); return true; }
+      return false;
+    };
+    const askExit = async () => {
+      const msg = S.score ? 'A música continua aberta se você ficar.' + (S.dirty ? '<br><b>Há alterações não salvas</b> (ficam guardadas como rascunho).' : '') : '';
+      const v = await showMsg('Sair do Tab Studio?', msg, [{ label: 'Ficar', value: 'cancel', primary: true }, { label: 'Sair', value: 'exit' }]);
+      if (v !== 'exit') return;
+      exiting = true;
+      history.back();   // tira a entrada extra; no aparelho, o próximo passo é fechar o app
+      setTimeout(() => {
+        try { window.close(); } catch (e) { /* o navegador não deixou */ }
+        setTimeout(() => { if (!document.hidden) { exiting = false; toast('Toque em voltar mais uma vez para sair'); armed = true; } }, 400);
+      }, 150);
+    };
+    let armed = false;
+    // desistiu de sair e voltou a usar o app: volta a proteger o "voltar"
+    document.addEventListener('pointerdown', () => { if (armed) { armed = false; guard(); } }, true);
+    window.addEventListener('popstate', () => {
+      if (exiting) { exiting = false; try { history.back(); } catch (e) { /* início do histórico */ } return; }
+      if (armed) { armed = false; return; }
+      guard();
+      if (!closeTop()) askExit();
+    });
+    guard();
+  }
   $('wReps').onclick = () => Rep.openLibrary('reps');
   $('btnRepAdd').onclick = () => Rep.addCurrent();
 

@@ -87,10 +87,15 @@
   document.addEventListener('pointerdown', e => { if (openPop && !openPop.pop.contains(e.target) && e.target !== openPop.btn && !openPop.btn.contains(e.target)) close(); }, true);
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && openPop) { e.stopPropagation(); close(); } }, true);
   window.addEventListener('resize', close);
-  document.addEventListener('scroll', e => { if (openPop && !openPop.pop.contains(e.target)) close(); }, true);
+  // fecha só se a rolagem mexer no lugar do botão (a partitura rola sozinha durante a música e não deve fechar a lista)
+  document.addEventListener('scroll', e => {
+    if (!openPop || openPop.pop.contains(e.target)) return;
+    const t = e.target;
+    if (t === document || t === document.documentElement || t === document.body || (t.contains && t.contains(openPop.btn))) close();
+  }, true);
 
   function scan(root) { (root.querySelectorAll ? root : document).querySelectorAll('select').forEach(enhance); if (root.tagName === 'SELECT') enhance(root); }
-  window.CustomSelect = { enhance, scan, close };
+  window.CustomSelect = { enhance, scan, close, isOpen: () => !!openPop };
   const start = () => {
     scan(document);
     new MutationObserver(ms => { for (const m of ms) for (const n of m.addedNodes) if (n.nodeType === 1) scan(n); }).observe(document.body, { childList: true, subtree: true });
