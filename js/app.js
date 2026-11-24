@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '2.2.5';
+  const APP_VERSION = '2.2.6';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Store = window.TabStore;
@@ -14,7 +14,14 @@
   const prefs = Object.assign({ stave: 'ScoreTab', layout: 'Page', zoom: 100, follow: true, flip: false, tbarCollapsed: window.innerWidth < 700 }, readPrefs());
   /* notação: 4 opções; "Tablatura + ritmo" = tablatura com as hastes do ritmo */
   const STAVES = { ScoreTab: ['ScoreTab', 'Automatic'], TabRhythm: ['Tab', 'ShowWithBars'], Tab: ['Tab', 'Hidden'], Score: ['Score', 'Automatic'] };
-  function staveOf(v) { return STAVES[v] ? v : ({ Default: 'ScoreTab', TabMixed: 'TabRhythm' }[v] || 'ScoreTab'); }
+  function staveOf(v) { return STAVES[v] || v === 'Auto' ? v : ({ Default: 'ScoreTab', TabMixed: 'TabRhythm' }[v] || 'ScoreTab'); }
+  /* "Automático": instrumento de corda (pela trilha principal) = tablatura + ritmo; teclado, bateria e o resto = partitura */
+  function effStave() {
+    const v = staveOf(prefs.stave);
+    if (v !== 'Auto') return v;
+    const t = S.score ? S.score.tracks[S.primary] : null;
+    return !t || neckable(t) ? 'TabRhythm' : 'Score';
+  }
   function readPrefs() { try { return JSON.parse(localStorage.getItem(PREF_KEY) || '{}'); } catch (e) { return {}; } }
   function savePrefs() { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch (e) { /* armazenamento indisponível */ } }
 
@@ -41,9 +48,9 @@
       includeNoteBounds: true,
       engine: 'svg'
     },
-    notation: { rhythmMode: at.TabRhythmMode[STAVES[staveOf(prefs.stave)][1]] },
+    notation: { rhythmMode: at.TabRhythmMode[STAVES[effStave()][1]] },
     display: {
-      staveProfile: at.StaveProfile[STAVES[staveOf(prefs.stave)][0]],
+      staveProfile: at.StaveProfile[STAVES[effStave()][0]],
       layoutMode: at.LayoutMode[prefs.layout] ?? at.LayoutMode.Page,
       scale: prefs.zoom / 100
     },
@@ -181,7 +188,7 @@
      o alphaTab não tem o que desenhar e quebra ("reading 'staves'"), deixando a página em branco.
      Nesse caso a bateria aparece na notação de bateria (cada pauta como foi gravada no arquivo). */
   function applyStaveProfile() {
-    const [prof, rhythm] = STAVES[staveOf(prefs.stave)];
+    const [prof, rhythm] = STAVES[effStave()];
     let want = prof;
     if (prof === 'Tab' && S.tracks.some(i => { const t = S.score.tracks[i]; return t && t.staves.some(st => st.isPercussion && !st.showTablature); })) want = 'Default';
     const sp = at.StaveProfile[want], rm = at.TabRhythmMode[rhythm];
@@ -934,7 +941,7 @@
   function removeCursor() { if (curEl) { curEl.remove(); curEl = null; } }
   function tabVisibleFor(track) {
     if (!isStringed(track)) return false;
-    const p = prefs.stave;
+    const p = effStave();
     if (p === 'Score') return false;
 
     return true;
@@ -1443,8 +1450,8 @@
   viewport.classList.toggle('horizontal', prefs.layout === 'Horizontal');
   function applyDisplay() {
     prefs.stave = staveOf(prefs.stave);
-    api.settings.display.staveProfile = at.StaveProfile[STAVES[prefs.stave][0]];
-    api.settings.notation.rhythmMode = at.TabRhythmMode[STAVES[prefs.stave][1]];
+    api.settings.display.staveProfile = at.StaveProfile[STAVES[effStave()][0]];
+    api.settings.notation.rhythmMode = at.TabRhythmMode[STAVES[effStave()][1]];
     api.settings.display.layoutMode = at.LayoutMode[prefs.layout];
     api.settings.display.scale = prefs.zoom / 100;
     api.settings.player.scrollMode = prefs.follow ? at.ScrollMode.Continuous : at.ScrollMode.Off;
