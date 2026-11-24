@@ -6,6 +6,10 @@ import { HAND_COLORS } from './pianokeys.js';
 
 // mãos = laranja, pés = verde (mesma identidade visual das mãos do teclado)
 export const LIMB_COLORS = { hand: HAND_COLORS.R, foot: HAND_COLORS.L };
+// nos pratos o laranja some no bronze: a batida das mãos neles fica roxa
+export const CYM_HIT = '#b27cf2';
+/** cor da batida: pratos tocados com a mão = roxo; tambores = laranja; pés = verde */
+export function hitColor(id, limb) { return limb === 'foot' ? LIMB_COLORS.foot : CYMBALS.has(String(id).split(':')[0]) ? CYM_HIT : LIMB_COLORS.hand; }
 
 const RACK = [50, 48, 47, 45];   // tons (agudo → grave)
 const FLOOR = [43, 41];          // surdos
@@ -69,43 +73,61 @@ export function layoutTop(kit) {
   const tops = [];   // topo de cada tambor (para os pratos ficarem por cima sem tapar o centro)
   // esquerda
   let left = has('kick') ? KX - KR + 0.5 : KX;
-  if (has('snare')) { const x = left - 7.5; P.set('snare', { x, y: 46, r: 7 }); left = x - 7; tops.push(39); }
+  // peças grandes (enchem a tela); os pratos passam por cima da borda dos tambores, como num kit de verdade
+  const SN = 8, HH = 9.4;
+  if (has('snare')) { const x = left - SN - 0.3; P.set('snare', { x, y: 46, r: SN }); left = x - SN; tops.push(46 - SN); }
   let hhTop = null;
-  if (has('hihat')) { const x = left - 6.2; P.set('hihat', { x, y: 41, r: 7.4 }); left = x - 7.4; hhTop = 41 - 7.4; }
+  if (has('hihat')) { const x = left - HH + 2; P.set('hihat', { x, y: 41, r: HH }); left = x - HH; hhTop = 41 - HH; }
   // direita
   let right = has('kick') ? KX + KR - 0.5 : KX, firstFloorRight = null, floorTop = null;
   kit.pieces.filter(p => p.tom === 'floor').forEach((p, i) => {
-    const r = 7.8 + i * 0.4, x = right + r + (i ? 0.6 : 0), y = 47 + i * 5;
+    const r = 9 + i * 0.4, x = right + r + (i ? 0.4 : -0.3), y = 47 + i * 5;
     P.set(p.id, { x, y, r }); right = x + r; tops.push(y - r);
     if (i === 0) { firstFloorRight = right; floorTop = y - r; }
   });
   // tons por cima do bumbo
   const rack = kit.pieces.filter(p => p.tom === 'rack'), n = rack.length;
   rack.forEach((p, i) => {
-    const r = 5.8 + i * 0.35, x = KX + (i - (n - 1) / 2) * 12.5, y = 26 - (n > 2 ? Math.sin((i + 0.5) / n * Math.PI) * 2.5 : 0);
+    const r = 6.8 + i * 0.35, x = KX + (i - (n - 1) / 2) * 14.4, y = 25 - (n > 2 ? Math.sin((i + 0.5) / n * Math.PI) * 2.5 : 0);
     P.set(p.id, { x, y, r }); tops.push(y - r);
   });
   if (has('kick')) tops.push(KY - KR * 0.625);
   const top = tops.length ? Math.min(...tops) : 30;
-  const leftTop = Math.min(hhTop == null ? 99 : hhTop, has('snare') ? 39 : 99);
+  const leftTop = Math.min(hhTop == null ? 99 : hhTop, has('snare') ? 46 - SN : 99);
   // pratos
-  const c1 = { x: left + 10.4, y: Math.min(top - 2.5, leftTop - 7), r: 9 };
+  const c1 = { x: left + 11, y: Math.min(top - 1, leftTop - 6), r: 11.5 };
   if (has('crash1')) P.set('crash1', c1);
   // condução à direita do surdo, sem tapar o último tom
   const lastRack = rack.length ? P.get(rack[rack.length - 1].id) : null;
   const rideX = Math.max((firstFloorRight != null ? firstFloorRight : right) + 11, lastRack ? lastRack.x + lastRack.r + 7 : -99);
-  const ride = { x: rideX, y: Math.min(top + 5, floorTop != null ? floorTop - 4.5 : 99), r: 10 };
+  const ride = { x: rideX, y: Math.min(top + 6, floorTop != null ? floorTop - 4 : 99), r: 12.5 };
   if (has('ride')) P.set('ride', ride);
-  if (has('crash2')) P.set('crash2', { x: rideX - 11, y: top - 12, r: 7.5 });
-  if (has('splash')) P.set('splash', { x: c1.x + 14, y: top - 11.5, r: 5.5 });
-  if (has('china')) P.set('china', { x: rideX + 6, y: top - 11.5, r: 7 });
+  if (has('crash2')) P.set('crash2', { x: rideX - 12, y: top - 9, r: 10 });
+  if (has('splash')) P.set('splash', { x: c1.x + 15, y: top - 8.5, r: 7 });
+  if (has('china')) P.set('china', { x: rideX + 7, y: top - 9, r: 9 });
+  uncover(P);
   // percussão
   if (has('cowbell')) P.set('cowbell', { x: KX + 12, y: KY - 7.5, r: 3.2 });
   if (has('tamb')) P.set('tamb', { x: left - 3.5, y: top + 5.5, r: 4.5 });
   if (has('perc')) P.set('perc', { x: left - 3.5, y: 55, r: 4.5 });
   // banco do baterista, atrás do bumbo
-  P.set('_bench', { x: has('kick') ? KX : (left + right) / 2, y: 61, r: 4.6 });
+  P.set('_bench', { x: has('kick') ? KX : (left + right) / 2, y: 66, r: 4.6 });
   return P;
+}
+
+/* prato nunca tapa o centro de um tambor (é onde aparece a batida): se tapar, sobe um pouco */
+function uncover(P) {
+  const drums = [...P].filter(([id]) => !CYMBALS.has(id) && id !== '_bench');
+  const hh = P.get('hihat');
+  for (const [id, c] of P) {
+    if (!CYMBALS.has(id) || id === 'hihat') continue;
+    const under = hh ? drums.concat([['hihat', hh]]) : drums;
+    for (let k = 0; k < 40; k++) {
+      const bad = under.some(([did, d]) => Math.hypot(c.x - d.x, c.y - d.y) < c.r + (did === 'kick' ? 2 : d.r * 0.55));
+      if (!bad) break;
+      c.y -= 0.6;
+    }
+  }
 }
 
 /** caixa que envolve tudo (com pedais, banco e nomes), para ajustar a escala.
@@ -117,6 +139,8 @@ export function boundsOf(P) {
     let t = q.r, b = q.r;
     if (id === 'kick') { t = q.r * 0.625; b = q.r * 0.625 + 9; }
     else if (id === 'hihat') b = q.r + 9;
+    if (id === 'kick' || id === 'hihat') b += 4;   // nome embaixo do pedal (visão com nomes)
+    else if (id !== '_bench') b += 3.2;
     else if (id === 'cowbell' || id === 'tamb' || id === 'perc') b += 4;
     t += 1.2; b += 1.2; const h = q.r + 1.2;
     items.push({ x: q.x, y: q.y, h, t, b });

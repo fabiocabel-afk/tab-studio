@@ -29,7 +29,7 @@ export function arcText(g, text, r, fs, color, mid) {
   if (!text) return;
   mid = mid == null ? Math.PI / 2 : mid;
   g.save();
-  g.font = '800 ' + fs + 'px "Arial Narrow", "Roboto Condensed", "Helvetica Neue", system-ui, sans-serif';
+  g.font = '900 ' + fs + 'px "Arial Narrow", "Roboto Condensed", "Helvetica Neue", system-ui, sans-serif';
   try { g.fontStretch = 'condensed'; } catch (e) { /* sem suporte */ }
   g.fillStyle = color; g.textAlign = 'center'; g.textBaseline = 'middle';
   const sp = fs * 0.1, chars = [...text], ws = chars.map(c => g.measureText(c).width + sp);
@@ -84,7 +84,7 @@ export function cymbalCanvas(kind, label, px) {
   // borda
   g.strokeStyle = 'rgba(45,22,4,.55)'; g.lineWidth = R * 0.014; circle(g, 0, 0, R * 0.985); g.stroke();
   // nome gravado
-  if (label) arcText(g, label.toUpperCase(), R * 0.7, R * 0.14, 'rgba(40,18,3,.66)');
+  if (label) arcText(g, label.toUpperCase(), R * 0.68, R * 0.2, 'rgba(30,12,0,.9)');
   // furo do centro
   g.fillStyle = '#1b140f'; circle(g, 0, 0, R * 0.03); g.fill();
   cache.set(key, cv);
@@ -136,7 +136,7 @@ export function headCanvas(kind, label, px) {
     g.beginPath(); g.ellipse(x, y, s * 1.6, s, rnd() * Math.PI, 0, Math.PI * 2); g.fill();
   }
   // nome impresso
-  if (label) arcText(g, label.toUpperCase(), R * 0.69, R * 0.17, 'rgba(36,30,28,.66)');
+  if (label) arcText(g, label.toUpperCase(), R * 0.64, R * 0.25, 'rgba(22,16,14,.92)');
   cache.set(key, cv);
   return cv;
 }

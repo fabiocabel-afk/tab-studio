@@ -4,7 +4,7 @@
  *    de quem bate (mãos = laranja, pés = verde); tambores pulsam e pratos balançam.
  *  · "Pistas": uma faixa por peça, as notas descem até a linha de batida
  *    (o bumbo é uma barra que atravessa todas as faixas). */
-import { pieceOf, buildKit, layoutTop, boundsOf, laneOrder, velocityOf, LIMB_COLORS } from './drumkit.js';
+import { pieceOf, buildKit, layoutTop, boundsOf, laneOrder, velocityOf, LIMB_COLORS, hitColor } from './drumkit.js';
 import { SHELL as LAC, cymbalCanvas, headCanvas, rugCanvas, stageTile } from './drumlook.js';
 
 const LOOK = 2400;          // ms de antecedência visíveis nas pistas
@@ -31,7 +31,9 @@ export class Drums2D {
     this._loop = this._loop.bind(this);
     requestAnimationFrame(this._loop);
   }
-  setView(v) { this.view = v === 'lanes' ? 'lanes' : 'kit'; this.dirty = true; }
+  // kit = de cima (nome impresso na peça); kitnames = de cima com o nome numa caixinha embaixo de cada peça
+  setView(v) { this.view = v === 'lanes' || v === 'kitnames' ? v : 'kit'; this.dirty = true; }
+  get names() { return this.view === 'kitnames'; }
   setCamera(v) { this.setView(v); }
   setKit(midis) { this.kit = buildKit(midis); this.pos = layoutTop(this.kit); this.box = boundsOf(this.pos); this.lanes = laneOrder(this.kit); this.hits.clear(); this.future = []; this.dirty = true; }
   setTrack(o) { if (o && o.drums) this.setKit(o.drums); }
@@ -139,12 +141,20 @@ export class Drums2D {
     g.fillStyle = gr; g.beginPath(); g.arc(x, y, rr, 0, Math.PI * 2); g.fill(); g.restore();
   }
   _ring(x, y, r, color) { const g = this.g; g.strokeStyle = color; g.lineWidth = Math.max(2, r * 0.2); g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.stroke(); }
-  _label(text, x, y, on, size) {
-    const g = this.g; g.font = (on ? 'bold ' : '') + size + 'px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'top';
-    const w = g.measureText(text).width + 8;
-    y = Math.min(y, this.H - size - 4);
-    g.fillStyle = 'rgba(13,12,18,.72)'; g.beginPath(); g.roundRect(x - w / 2, y - 1, w, size + 4, 4); g.fill();
-    g.fillStyle = on ? '#ffffff' : '#a9a3b8'; g.fillText(text, x, y + 1);
+  /* caixinha com o nome embaixo da peça; acende em laranja quando a peça é tocada (lv 0..1) */
+  _label(text, x, y, lv, size) {
+    const g = this.g; g.font = '800 ' + size + 'px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    const w = g.measureText(text).width + size * 1.1, h = size * 1.6;
+    x = Math.max(w / 2 + 2, Math.min(this.W - w / 2 - 2, x)); y = Math.min(y, this.H - h - 2);
+    (this.labRects || (this.labRects = [])).push({ text, x, y, w, h });
+    const on = Math.min(1, lv * 1.6);
+    g.save();
+    if (on > 0.05) { g.shadowColor = 'rgba(255,153,1,' + (0.9 * on).toFixed(2) + ')'; g.shadowBlur = 14 * on; }
+    g.fillStyle = 'rgba(12,10,18,.88)'; g.beginPath(); g.roundRect(x - w / 2, y, w, h, h / 2); g.fill();
+    if (on > 0.02) { g.globalAlpha = on; g.fillStyle = '#FF9901'; g.fill(); g.globalAlpha = 1; }
+    g.restore();
+    g.strokeStyle = on > 0.3 ? '#ffd08a' : 'rgba(255,255,255,.22)'; g.lineWidth = 1; g.beginPath(); g.roundRect(x - w / 2 + 0.5, y + 0.5, w - 1, h - 1, h / 2); g.stroke();
+    g.fillStyle = on > 0.45 ? '#1a1020' : '#ffffff'; g.fillText(text, x, y + h / 2 + 0.5);
   }
   _drum(p, x, y, r, now) { this._scaled(x, y, this.pulse(p.id, now), () => this._drum0(p, x, y, r, now)); }
   _drum0(p, x, y, r, now) {
@@ -161,7 +171,7 @@ export class Drums2D {
     // pele (afunda um pouco ao bater)
     const hr = r * 0.9;
     g.save(); g.beginPath(); g.arc(x, y, hr, 0, Math.PI * 2); g.clip();
-    g.drawImage(headCanvas(key === 'snare' ? 'snare' : 'tom', p.name, this._tex(hr)), x - hr, y - hr, hr * 2, hr * 2);
+    g.drawImage(headCanvas(key === 'snare' ? 'snare' : 'tom', this.names ? '' : p.name, this._tex(hr)), x - hr, y - hr, hr * 2, hr * 2);
     const lg = g.createRadialGradient(x - hr * 0.45, y - hr * 0.55, 0, x, y, hr * 1.15);
     lg.addColorStop(0, 'rgba(255,255,255,.22)'); lg.addColorStop(0.55, 'rgba(255,255,255,0)'); lg.addColorStop(1, 'rgba(0,0,0,.22)');
     g.fillStyle = lg; g.fillRect(x - hr, y - hr, hr * 2, hr * 2);
@@ -200,7 +210,7 @@ export class Drums2D {
   }
   _cymbal0(p, x, y, r, now) {
     const g = this.g, key = p.id, lv = this.level(key, now), h = this.hits.get(key);
-    const col = h ? LIMB_COLORS[h.limb] : LIMB_COLORS.hand;
+    const col = hitColor(key, h ? h.limb : 'hand');
     this._glow(x, y, r, col, lv * 0.8);
     // balanço: o prato oscila quando é batido
     const t = h && !h.static ? (now - h.t0) / 1000 : 0;
@@ -213,7 +223,7 @@ export class Drums2D {
     // chimbal aberto: aparece a borda do prato de baixo
     if (open) g.drawImage(cymbalCanvas('hihat', '', this._tex(r)), -r * 1.06, -r * 0.94, r * 2, r * 2);
     g.rotate(ang); g.scale(1 + wob, 1 - wob);
-    g.drawImage(cymbalCanvas(key, p.name, this._tex(r)), -r, -r, r * 2, r * 2);
+    g.drawImage(cymbalCanvas(key, this.names ? '' : p.name, this._tex(r)), -r, -r, r * 2, r * 2);
     // brilho do bronze: a "cruz" de luz do torneado, que gira com o balanço
     g.save(); g.beginPath(); g.arc(0, 0, r, 0, Math.PI * 2); g.clip();
     if (g.createConicGradient) {
@@ -236,7 +246,7 @@ export class Drums2D {
       const bell = h && h.v === 'bell';
       this._stick(x + (bell ? 0 : r * 0.45), y + (bell ? 0 : r * 0.35), Math.max(5, r * 0.2), col, lv, h.static ? 0 : h.t0, now);
     }
-    if (this.preview.has(key) && lv < 0.3) this._ring(x + r * 0.45, y + r * 0.35, Math.max(4, r * 0.16), LIMB_COLORS[this.preview.get(key)]);
+    if (this.preview.has(key) && lv < 0.3) this._ring(x + r * 0.45, y + r * 0.35, Math.max(4, r * 0.16), hitColor(key, this.preview.get(key)));
   }
   /* pedal visto de cima: base, plataforma com frisos e o batedor */
   _pedal(px, py, w, len, s) {
@@ -271,7 +281,7 @@ export class Drums2D {
       g.setLineDash([Math.max(1, br * 0.08), Math.max(1, br * 0.08)]); g.strokeStyle = 'rgba(255,255,255,.18)'; g.lineWidth = Math.max(0.6, br * 0.03);
       g.beginPath(); g.arc(bx, by, br * 0.82, 0, Math.PI * 2); g.stroke(); g.setLineDash([]);
     }
-    const fs = Math.max(9, Math.min(13, s * 2.4));
+    const fs = Math.max(11, Math.min(15, s * 2.2));
     // bumbo (visto de cima é um "retângulo": o tambor está deitado)
     const kp = this.pos.get('kick');
     if (kp) {
@@ -298,9 +308,10 @@ export class Drums2D {
         g.fillStyle = chrome(g, lx - w * 0.03, 0, lx + w * 0.03, 0); g.beginPath(); g.roundRect(lx - w * 0.018, y + d * 0.4, w * 0.036, d * 0.2, w * 0.012); g.fill();
       }
       // nome no casco
-      g.save(); g.font = '800 ' + Math.max(8, d * 0.16) + 'px "Arial Narrow", "Roboto Condensed", system-ui, sans-serif'; try { g.fontStretch = 'condensed'; } catch (e) { /* sem suporte */ }
-      g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = 'rgba(255,235,225,.72)';
-      g.fillText('BUMBO', X(kp.x), Y(kp.y) - d * 0.2); g.restore();
+      g.save(); g.font = '900 ' + Math.max(10, d * 0.22) + 'px "Arial Narrow", "Roboto Condensed", system-ui, sans-serif'; try { g.fontStretch = 'condensed'; } catch (e) { /* sem suporte */ }
+      g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = 'rgba(255,238,230,.92)';
+      if (!this.names) g.fillText('BUMBO', X(kp.x), Y(kp.y) - d * 0.2);
+      g.restore();
       if (lv > 0.01) { g.globalAlpha = Math.min(0.6, lv * 0.65); g.fillStyle = LIMB_COLORS.foot; g.fillRect(x, y, w, d); g.globalAlpha = 1; }
       // pedal com o batedor encostado na pele
       const px = X(kp.x), py = Y(kp.y) + d / 2 + 1.2 * s;
@@ -308,6 +319,7 @@ export class Drums2D {
       this._pedal(px, py, 4.2 * s, 7 * s, s);
       if (lv > 0.05 || (h && h.static)) this._stick(px, py + 3 * s, Math.max(5, 2.2 * s), LIMB_COLORS.foot, lv, h.static ? 0 : h.t0, now);
       else if (this.preview.has('kick')) this._ring(px, py + 3 * s, Math.max(4, 1.6 * s), LIMB_COLORS.foot);
+      if (this.names) labels.push(['Bumbo', px, py + 7.6 * s, lv]);
     }
     // pedal do chimbal
     const hp = this.pos.get('hihat');
@@ -317,18 +329,23 @@ export class Drums2D {
       this._pedal(px, py, 3.6 * s, 6 * s, s);
       if (lv > 0.05 || (h && h.static)) this._stick(px, py + 2.6 * s, Math.max(5, 2 * s), LIMB_COLORS.foot, lv, h.static ? 0 : h.t0, now);
       else if (this.preview.has('hihat:p')) this._ring(px, py + 2.6 * s, Math.max(4, 1.5 * s), LIMB_COLORS.foot);
-    }
+      this._hhName = [px, py + 6.6 * s, lv];
+    } else this._hhName = null;
     // tambores primeiro, pratos por cima (como na vida real, ficam mais altos)
     const order = this.kit.pieces.filter(p => p.id !== 'kick').sort((a, b) => (a.cymbal ? 1 : 0) - (b.cymbal ? 1 : 0));
     for (const p of order) {
       const q = this.pos.get(p.id); if (!q) continue;
       const x = X(q.x), y = Y(q.y), r = q.r * s;
       if (p.cymbal) this._cymbal(p, x, y, r, now);
-      else if (p.id === 'cowbell' || p.id === 'tamb' || p.id === 'perc') { this._small(p, x, y, r, now); labels.push([p.name, x, y + r + 2, this.level(p.id, now) > 0.25]); }
+      else if (p.id === 'cowbell' || p.id === 'tamb' || p.id === 'perc') this._small(p, x, y, r, now);
       else this._drum(p, x, y, r, now);
+      const lv = this.level(p.id, now);
+      if (p.id === 'hihat' && this._hhName && this.names) labels.push([p.name, this._hhName[0], this._hhName[1], Math.max(lv, this._hhName[2])]);
+      else if (p.id === 'cowbell' || p.id === 'tamb' || p.id === 'perc' || (this.names && p.id !== 'hihat')) labels.push([p.name, x, y + r + 3, lv]);
     }
-    // nomes (as outras peças têm o nome impresso nelas)
-    for (const [t, x, y, on] of labels) this._label(t, x, y, on, fs);
+    // nomes embaixo das peças, por cima de tudo (só na visão "com nomes"; percussão pequena sempre)
+    this.labRects = [];
+    for (const [t, x, y, lv] of labels) this._label(t, x, y, lv, fs);
   }
   _small(p, x, y, r, now) { this._scaled(x, y, this.pulse(p.id, now, 0.12), () => this._small0(p, x, y, r, now)); }
   _small0(p, x, y, r, now) {
@@ -355,7 +372,7 @@ export class Drums2D {
       const lv = Math.max(this.level(id, now), id === 'hihat' ? this.level('hihat:p', now) : 0);
       const h = this.hits.get(id) || this.hits.get(id + ':p');
       const cx = x + lw / 2, rr = Math.min(lw * 0.36, 16) * Math.min(this.pulse(id, now, 0.16), id === 'hihat' ? this.pulse('hihat:p', now, 0.16) : 1);
-      if (lv > 0.01) { this._glow(cx, hitY, rr, h ? LIMB_COLORS[h.limb] : LIMB_COLORS.hand, lv); }
+      if (lv > 0.01) { this._glow(cx, hitY, rr, hitColor(id, h ? h.limb : 'hand'), lv); }
       g.strokeStyle = p && p.cymbal ? '#c99a3c' : '#d8d1c0'; g.lineWidth = 2;
       if (p && p.cymbal) { g.beginPath(); g.arc(cx, hitY, rr, 0, Math.PI * 2); g.stroke(); }
       else { g.beginPath(); g.roundRect(cx - rr * 1.1, hitY - rr * 0.6, rr * 2.2, rr * 1.2, 5); g.stroke(); }
@@ -374,7 +391,7 @@ export class Drums2D {
       if (dt > LOOK || dt < -260) continue;
       let y = hitY - dt * pps; const fade = dt < 0 ? Math.max(0, 1 + dt / 260) : 1;
       g.globalAlpha = fade * (0.55 + 0.45 * f.vel);
-      const col = LIMB_COLORS[f.limb];
+      const col = hitColor(f.id, f.limb);
       if (f.id === 'kick') { g.globalAlpha *= 0.85; g.fillStyle = col; g.beginPath(); g.roundRect(left + 2, y - 2.5, W - 20, 5, 2.5); g.fill(); g.globalAlpha = 1; continue; }
       const i = lanes.indexOf(f.id); if (i < 0) { g.globalAlpha = 1; continue; }
       const cx = left + i * lw + lw / 2, rr = Math.min(lw * 0.36, 16) * (0.55 + 0.45 * f.vel);

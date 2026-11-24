@@ -8,7 +8,7 @@ import { OrbitControls } from '../vendor/OrbitControls.js';
 import { RoomEnvironment } from '../vendor/RoomEnvironment.js';
 import { mergeGeometries } from '../vendor/BufferGeometryUtils.js';
 import { GLTFLoader } from '../vendor/GLTFLoader.js';
-import { pieceOf, buildKit, velocityOf, LIMB_COLORS, BASE_NAMES } from './drumkit.js';
+import { pieceOf, buildKit, velocityOf, LIMB_COLORS, BASE_NAMES, CYM_HIT } from './drumkit.js';
 import { SHELL as LAC, cymbalCanvas, anisoCanvas, headCanvas, rugCanvas } from './drumlook.js';
 
 const DR_URL = new URL('../models/drums.glb', import.meta.url).href;
@@ -276,6 +276,7 @@ export class Drums3D {
       let lv = this.level(key, now);
       const h = this.hits.get(key);
       let col = h ? LIMB_COLORS[h.limb] : LIMB_COLORS.hand;
+      if (p.kind === 'CYM' && col === LIMB_COLORS.hand) col = CYM_HIT;   // laranja some no bronze: roxo
       // chimbal de pé: o prato fecha e acende em verde
       if (id === 'hihat') { const lp = this.level('hihat:p', now); if (lp > lv) { lv = lp; col = LIMB_COLORS.foot; } }
       if (lv > 0.004 || p._lit) {
@@ -314,7 +315,7 @@ export class Drums3D {
         st.visible = !!show;
         if (show) { st.material.color.set(col); st.material.opacity = Math.min(1, 0.4 + lv); const grow = h && h.t0 && !h.static ? Math.min(1, 0.6 + 0.4 * (now - h.t0) / 110) : 1; st.scale.setScalar(Math.max(0.018, Math.min(0.03, p.radius * 0.14)) * grow); }
       }
-      if (rg) { const pv = this.preview.get(id); rg.visible = !!pv && lv < 0.3; if (pv) rg.material.color.set(LIMB_COLORS[pv]); }
+      if (rg) { const pv = this.preview.get(id); rg.visible = !!pv && lv < 0.3; if (pv) rg.material.color.set(p.kind === 'CYM' && pv === 'hand' ? CYM_HIT : LIMB_COLORS[pv]); }
     }
     return anim;
   }

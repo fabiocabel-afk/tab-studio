@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '2.2.0';
+  const APP_VERSION = '2.2.1';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Store = window.TabStore;
@@ -1227,7 +1227,7 @@
     keys3d: { file: './keyboard3d.js', cls: 'Keyboard3D', canvas: 'canvasK3d', label: 'Teclado 3D', views: [['player', 'Visão do músico', 'Músico'], ['top', 'Topo', 'Topo'], ['full', 'Teclado inteiro', 'Inteiro']] },
     keys2d: { file: './keyboard2d.js', cls: 'Keyboard2D', canvas: 'canvasK2d', label: 'Teclado 2D', views: [['range', 'Faixa tocada', 'Faixa'], ['hands', 'Duas mãos', '2 mãos'], ['full', 'Teclado inteiro', 'Inteiro']] },
     drum3d: { file: './drums3d.js', cls: 'Drums3D', canvas: 'canvasD3d', label: 'Bateria 3D', views: [['player', 'Visão do baterista', 'Baterista'], ['front', 'De frente', 'Frente'], ['top', 'De cima', 'De cima']] },
-    drum2d: { file: './drums2d.js', cls: 'Drums2D', canvas: 'canvasD2d', label: 'Bateria 2D', views: [['kit', 'Bateria vista de cima', 'De cima'], ['lanes', 'Pistas (notas descendo)', 'Pistas']] }
+    drum2d: { file: './drums2d.js', cls: 'Drums2D', canvas: 'canvasD2d', label: 'Bateria 2D', views: [['kit', 'Bateria vista de cima', 'De cima'], ['kitnames', 'De cima (nomes das peças)', 'Com nomes'], ['lanes', 'Pistas (notas descendo)', 'Pistas']] }
   };
   S.viz = {}; S.vizLoading = {}; S.vizMode = null;
   prefs.vizViews = Object.assign({ neck3d: 'player', neck2d: 'focus7', keys3d: 'player', keys2d: 'range', drum3d: 'player', drum2d: 'kit' }, prefs.vizViews || {});
