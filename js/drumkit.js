@@ -32,63 +32,103 @@ export function pieceOf(midi) {
   return { id: 'perc', v: '', limb: 'hand' };
 }
 
-const BASE_NAMES = {
+export const BASE_NAMES = {
   kick: 'Bumbo', snare: 'Caixa', hihat: 'Chimbal', crash1: 'Ataque', crash2: 'Ataque 2', ride: 'Condução',
   china: 'China', splash: 'Splash', cowbell: 'Cowbell', tamb: 'Pandeirola', perc: 'Percussão'
 };
 export const CYMBALS = new Set(['hihat', 'crash1', 'crash2', 'ride', 'china', 'splash']);
 
-/** Monta o kit a partir das notas usadas na trilha.
- * Base: chimbal, caixa, bumbo, 2 tons, surdo, ataque e condução.
- * Peças extras (ataque 2, china, splash, mais tons…) só entram se a música usar. */
+/** Monta o kit só com as peças que a música usa (bateria sob medida).
+ * Sem nenhuma nota (trilha vazia), mostra o kit básico: chimbal, caixa, bumbo, 2 tons, surdo, ataque e condução. */
 export function buildKit(usedMidis) {
-  const used = new Set(usedMidis || []);
+  let used = new Set(usedMidis || []);
+  if (!used.size) used = new Set([42, 38, 36, 48, 45, 43, 49, 51]);
   const ids = new Set();
   for (const m of used) ids.add(pieceOf(m).id);
-  let rack = RACK.filter(m => used.has(m));
-  for (const d of [48, 45, 50, 47]) { if (rack.length >= 2) break; if (!rack.includes(d)) rack.push(d); }
-  rack.sort((a, b) => b - a);
-  let floor = FLOOR.filter(m => used.has(m)); if (!floor.length) floor = [43];
-  floor.sort((a, b) => b - a);
+  const rack = RACK.filter(m => used.has(m)).sort((a, b) => b - a);
+  const floor = FLOOR.filter(m => used.has(m)).sort((a, b) => b - a);
   const pieces = [];
   const add = (id, name, extra) => pieces.push(Object.assign({ id, name, cymbal: CYMBALS.has(id) }, extra || {}));
-  add('hihat', BASE_NAMES.hihat); add('snare', BASE_NAMES.snare); add('kick', BASE_NAMES.kick, { foot: true });
-  rack.forEach((m, i) => add('tom' + m, 'Tom ' + (i + 1), { tom: 'rack', order: i, of: rack.length }));
+  for (const id of ['hihat', 'snare']) if (ids.has(id)) add(id, BASE_NAMES[id]);
+  if (ids.has('kick')) add('kick', BASE_NAMES.kick, { foot: true });
+  rack.forEach((m, i) => add('tom' + m, rack.length > 1 ? 'Tom ' + (i + 1) : 'Tom', { tom: 'rack', order: i, of: rack.length }));
   floor.forEach((m, i) => add('tom' + m, floor.length > 1 ? 'Surdo ' + (i + 1) : 'Surdo', { tom: 'floor', order: i, of: floor.length }));
-  add('crash1', BASE_NAMES.crash1); add('ride', BASE_NAMES.ride);
-  for (const x of ['crash2', 'splash', 'china', 'cowbell', 'tamb', 'perc']) if (ids.has(x)) add(x, BASE_NAMES[x]);
+  for (const x of ['crash1', 'ride', 'crash2', 'splash', 'china', 'cowbell', 'tamb', 'perc']) if (ids.has(x)) add(x, BASE_NAMES[x]);
   return { pieces, byId: new Map(pieces.map(p => [p.id, p])) };
 }
 
-/* Posições na vista de cima (baterista embaixo, plateia em cima), numa área de 100 × 62.
-   Pratos ficam por cima dos tambores (como no kit de verdade), mas sem esconder o centro deles. */
+/* Posições na vista de cima (baterista embaixo, plateia em cima).
+   As peças são montadas encostadas umas nas outras a partir do bumbo, como um baterista arma o kit:
+   caixa e chimbal à esquerda, tons em arco por cima, surdos à direita e os pratos por cima de tudo.
+   Peça que a música não usa não entra, e as outras chegam mais perto (sem buracos).
+   Quem desenha ajusta a escala para o conjunto ocupar a tela (ver bounds). */
 export function layoutTop(kit) {
-  const P = new Map();
-  const put = (id, x, y, r) => { if (kit.byId.has(id)) P.set(id, { x, y, r }); };
-  put('kick', 50, 41, 11);
-  put('snare', 31, 46, 7);
-  put('hihat', 15, 41, 7.4);
+  const P = new Map(), has = id => kit.byId.has(id);
+  const KX = 50, KY = 41, KR = 11;
+  if (has('kick')) P.set('kick', { x: KX, y: KY, r: KR });
+  const tops = [];   // topo de cada tambor (para os pratos ficarem por cima sem tapar o centro)
+  // esquerda
+  let left = has('kick') ? KX - KR + 0.5 : KX;
+  if (has('snare')) { const x = left - 7.5; P.set('snare', { x, y: 46, r: 7 }); left = x - 7; tops.push(39); }
+  let hhTop = null;
+  if (has('hihat')) { const x = left - 6.2; P.set('hihat', { x, y: 41, r: 7.4 }); left = x - 7.4; hhTop = 41 - 7.4; }
+  // direita
+  let right = has('kick') ? KX + KR - 0.5 : KX, firstFloorRight = null, floorTop = null;
+  kit.pieces.filter(p => p.tom === 'floor').forEach((p, i) => {
+    const r = 7.8 + i * 0.4, x = right + r + (i ? 0.6 : 0), y = 47 + i * 5;
+    P.set(p.id, { x, y, r }); right = x + r; tops.push(y - r);
+    if (i === 0) { firstFloorRight = right; floorTop = y - r; }
+  });
+  // tons por cima do bumbo
   const rack = kit.pieces.filter(p => p.tom === 'rack'), n = rack.length;
   rack.forEach((p, i) => {
-    const x = 50 + (i - (n - 1) / 2) * 12.5, y = 26 - (n > 2 ? Math.sin((i + 0.5) / n * Math.PI) * 2.5 : 0);
-    P.set(p.id, { x, y, r: 5.8 + i * 0.35 });
+    const r = 5.8 + i * 0.35, x = KX + (i - (n - 1) / 2) * 12.5, y = 26 - (n > 2 ? Math.sin((i + 0.5) / n * Math.PI) * 2.5 : 0);
+    P.set(p.id, { x, y, r }); tops.push(y - r);
   });
-  const floor = kit.pieces.filter(p => p.tom === 'floor');
-  floor.forEach((p, i) => P.set(p.id, { x: 68 + i * 16, y: 47 + i * 5, r: 7.8 + i * 0.4 }));
-  put('crash1', 18, 17, 9);
-  put('ride', 87, 25, 10);
-  put('crash2', 76, 7.5, 7.5);
-  put('splash', 32, 8, 5.5);
-  put('china', 93, 8, 7);
-  put('cowbell', 62, 33.5, 3.2);
-  put('tamb', 5, 25, 4.5);
-  put('perc', 5, 55, 4.5);
+  if (has('kick')) tops.push(KY - KR * 0.625);
+  const top = tops.length ? Math.min(...tops) : 30;
+  const leftTop = Math.min(hhTop == null ? 99 : hhTop, has('snare') ? 39 : 99);
+  // pratos
+  const c1 = { x: left + 10.4, y: Math.min(top - 2.5, leftTop - 7), r: 9 };
+  if (has('crash1')) P.set('crash1', c1);
+  // condução à direita do surdo, sem tapar o último tom
+  const lastRack = rack.length ? P.get(rack[rack.length - 1].id) : null;
+  const rideX = Math.max((firstFloorRight != null ? firstFloorRight : right) + 11, lastRack ? lastRack.x + lastRack.r + 7 : -99);
+  const ride = { x: rideX, y: Math.min(top + 5, floorTop != null ? floorTop - 4.5 : 99), r: 10 };
+  if (has('ride')) P.set('ride', ride);
+  if (has('crash2')) P.set('crash2', { x: rideX - 11, y: top - 12, r: 7.5 });
+  if (has('splash')) P.set('splash', { x: c1.x + 14, y: top - 11.5, r: 5.5 });
+  if (has('china')) P.set('china', { x: rideX + 6, y: top - 11.5, r: 7 });
+  // percussão
+  if (has('cowbell')) P.set('cowbell', { x: KX + 12, y: KY - 7.5, r: 3.2 });
+  if (has('tamb')) P.set('tamb', { x: left - 3.5, y: top + 5.5, r: 4.5 });
+  if (has('perc')) P.set('perc', { x: left - 3.5, y: 55, r: 4.5 });
+  // banco do baterista, atrás do bumbo
+  P.set('_bench', { x: has('kick') ? KX : (left + right) / 2, y: 61, r: 4.6 });
   return P;
+}
+
+/** caixa que envolve tudo (com pedais, banco e nomes), para ajustar a escala.
+ *  items: centro e quanto cada peça ocupa para cada lado (em unidades do tamanho das peças) */
+export function boundsOf(P) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  const items = [];
+  for (const [id, q] of P) {
+    let t = q.r, b = q.r;
+    if (id === 'kick') { t = q.r * 0.625; b = q.r * 0.625 + 9; }
+    else if (id === 'hihat') b = q.r + 9;
+    else if (id === 'cowbell' || id === 'tamb' || id === 'perc') b += 4;
+    t += 1.2; b += 1.2; const h = q.r + 1.2;
+    items.push({ x: q.x, y: q.y, h, t, b });
+    x0 = Math.min(x0, q.x - h); x1 = Math.max(x1, q.x + h); y0 = Math.min(y0, q.y - t); y1 = Math.max(y1, q.y + b);
+  }
+  if (!isFinite(x0)) return { x0: 0, y0: 0, x1: 100, y1: 62, items };
+  return { x0, y0, x1, y1, items };
 }
 
 /** Faixas das pistas (esquerda → direita); o bumbo vira uma barra larga atravessando todas. */
 export function laneOrder(kit) {
-  const order = ['hihat', 'snare'];
+  const order = ['hihat', 'snare'].filter(id => kit.byId.has(id));
   for (const p of kit.pieces) if (p.tom === 'rack') order.push(p.id);
   for (const p of kit.pieces) if (p.tom === 'floor') order.push(p.id);
   for (const id of ['crash1', 'splash', 'crash2', 'china', 'ride', 'cowbell', 'tamb', 'perc']) if (kit.byId.has(id)) order.push(id);

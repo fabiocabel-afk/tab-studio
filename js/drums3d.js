@@ -8,13 +8,14 @@ import { OrbitControls } from '../vendor/OrbitControls.js';
 import { RoomEnvironment } from '../vendor/RoomEnvironment.js';
 import { mergeGeometries } from '../vendor/BufferGeometryUtils.js';
 import { GLTFLoader } from '../vendor/GLTFLoader.js';
-import { pieceOf, buildKit, velocityOf, LIMB_COLORS } from './drumkit.js';
+import { pieceOf, buildKit, velocityOf, LIMB_COLORS, BASE_NAMES } from './drumkit.js';
+import { SHELL as LAC, cymbalCanvas, anisoCanvas, headCanvas, rugCanvas } from './drumlook.js';
 
 const DR_URL = new URL('../models/drums.glb', import.meta.url).href;
 // nome do material no modelo → [cor, metal, aspereza]
 const DR_COLORS = {
-  oil_finnish: ['#5a0c12', 0.15, 0.28], head_beat: ['#ebe5d6', 0, 0.75], head_snare: ['#f4f0e6', 0, 0.7], bd_head_beat: ['#ebe5d6', 0, 0.75],
-  head_res: ['#d9d2c0', 0, 0.8], bd_reshead: ['#5a0c12', 0.15, 0.3],
+  oil_finnish: [LAC.base, 0.1, 0.32], head_beat: ['#ebe5d6', 0, 0.75], head_snare: ['#f4f0e6', 0, 0.7], bd_head_beat: ['#ebe5d6', 0, 0.75],
+  head_res: ['#d9d2c0', 0, 0.8], bd_reshead: [LAC.base, 0.1, 0.32],
   cymbal_01: ['#c9a04a', 1, 0.3], cymbal_01_brand: ['#c9a04a', 1, 0.3], cymbal_02: ['#c49a45', 1, 0.34], cymbal_03: ['#b8733a', 1, 0.32],
   chrome: ['#e2e4ea', 1, 0.12], thread: ['#c9ccd3', 1, 0.3], rough_chrome: ['#c9ccd3', 1, 0.35], alu: ['#c8ccd2', 1, 0.3],
   bras: ['#b5913a', 1, 0.3], ruthenium: ['#3c3d43', 1, 0.28], metal_dark: ['#2a2b30', 0.8, 0.4], metal: ['#9a9da5', 1, 0.3],
@@ -41,6 +42,7 @@ function loadDrums() {
 
 // tambores do modelo, do mais agudo ao mais grave
 const TOMS_3D = ['tt10', 'tt12', 'ft14', 'ft16'];
+const TOM_NAMES = { tt10: 'Tom 1', tt12: 'Tom 2', ft14: 'Surdo', ft16: 'Surdo 2' };
 const DRUMS_3D = new Set(['kick', 'snare', 'tt10', 'tt12', 'ft14', 'ft16']);   // tambores: casco + pele + ferragens vibram juntos
 const CYM_IDS = ['hihat', 'crash1', 'crash2', 'ride', 'china', 'splash'];
 
@@ -62,7 +64,8 @@ export class Drums3D {
     const dl = new THREE.DirectionalLight('#ffffff', 1.6); dl.position.set(1.5, 3.5, 2.5); sc.add(dl);
     const dl2 = new THREE.DirectionalLight('#ffe2c0', 0.6); dl2.position.set(-2, 2, -2); sc.add(dl2);
     // chão
-    const floor = new THREE.Mesh(new THREE.CircleGeometry(1.9, 48), new THREE.MeshStandardMaterial({ color: '#17131f', roughness: 0.95 }));
+    const rugTex = new THREE.CanvasTexture(rugCanvas(512)); rugTex.colorSpace = THREE.SRGBColorSpace;
+    const floor = new THREE.Mesh(new THREE.CircleGeometry(1.9, 64), new THREE.MeshStandardMaterial({ map: rugTex, roughness: 0.97 }));
     floor.rotation.x = -Math.PI / 2; floor.position.y = -0.002; sc.add(floor);
     this.kitGroup = new THREE.Group(); sc.add(this.kitGroup);
     this.setKit([]);
@@ -74,6 +77,8 @@ export class Drums3D {
 
   _mat(name) {
     const C = DR_COLORS[name] || ['#888888', 0.5, 0.5];
+    // casco: laca com verniz por cima (o brilho "molhado" de bateria de verdade)
+    if (name === 'oil_finnish' || name === 'bd_reshead') return new THREE.MeshPhysicalMaterial({ color: C[0], metalness: C[1], roughness: C[2], clearcoat: 1, clearcoatRoughness: 0.06, envMapIntensity: 0.8 });
     return new THREE.MeshStandardMaterial({ color: C[0], metalness: C[1], roughness: C[2], envMapIntensity: name === 'oil_finnish' || name === 'bd_reshead' ? 0.55 : 1 });
   }
   _build(model) {
@@ -130,6 +135,7 @@ export class Drums3D {
       if (id === 'kick') nrm.set(0, 0, -1);
       const size = box.getSize(new THREE.Vector3());
       p.pivot = pivot; p.center = center; p.normal = nrm; p.radius = Math.max(size.x, size.z, id === 'kick' ? size.y : 0) / 2;
+      this._finish(id, p);
       p.mats = p.lit.map(o => o.material); p.base = p.mats.map(m => m.color.clone());
     }
     // ponta da baqueta (uma por peça) e anel da prévia
@@ -153,6 +159,41 @@ export class Drums3D {
       rm.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), p.normal);
     }
     this.built = true; this.dirty = true;
+  }
+
+  /* acabamento igual ao do 2D: textura do prato (torneado + martelado + nome) e da pele.
+     As coordenadas da textura são uma projeção plana sobre a pele/prato,
+     com o "pé" do texto virado para o baterista (no bumbo, para o chão). */
+  _finish(id, p) {
+    const cym = p.kind === 'CYM', head = p.kind === 'HEAD';
+    if (!cym && !head) return;
+    const n = p.normal.clone().normalize();
+    const D = (id === 'kick' ? new THREE.Vector3(0, -1, 0) : new THREE.Vector3(0, 0, -1));
+    D.addScaledVector(n, -n.dot(D)).normalize();
+    const Rt = new THREE.Vector3().crossVectors(n, D).normalize();
+    const R = Math.max(1e-4, p.radius);
+    const label = TOM_NAMES[id] || BASE_NAMES[id] || '';
+    let map, aniso = null;
+    if (cym) {
+      map = new THREE.CanvasTexture(cymbalCanvas(id, label, 512));
+      aniso = new THREE.CanvasTexture(anisoCanvas(id, 256)); aniso.colorSpace = THREE.NoColorSpace;
+    } else map = new THREE.CanvasTexture(headCanvas(id === 'snare' ? 'snare' : id === 'kick' ? 'kick' : 'tom', id === 'kick' ? '' : label, 512));
+    map.colorSpace = THREE.SRGBColorSpace; map.anisotropy = 4;
+    const v = new THREE.Vector3();
+    for (const o of p.lit) {
+      const pos = o.geometry.attributes.position, uv = new Float32Array(pos.count * 2);
+      for (let i = 0; i < pos.count; i++) {
+        v.fromBufferAttribute(pos, i);
+        uv[i * 2] = 0.5 + v.dot(Rt) / (2 * R); uv[i * 2 + 1] = 0.5 - v.dot(D) / (2 * R);
+      }
+      o.geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+      const old = o.material;
+      o.material = cym
+        ? new THREE.MeshPhysicalMaterial({ color: '#ffffff', map, metalness: 1, roughness: 0.3, anisotropy: 0.8, anisotropyMap: aniso, envMapIntensity: 1.15 })
+        : new THREE.MeshStandardMaterial({ color: '#ffffff', map, metalness: 0, roughness: 0.78 });
+      o.material.emissive = new THREE.Color('#000000');
+      if (old && old.dispose) old.dispose();
+    }
   }
 
   /* kit da música → peça do modelo 3D */
