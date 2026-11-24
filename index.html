@@ -57,6 +57,7 @@
   <symbol id="i-undo" viewBox="0 0 24 24"><path d="M7.4 7H14a6 6 0 010 12H8v-2.4h6a3.6 3.6 0 000-7.2H7.4l3 3-1.7 1.7L2.8 8.2 8.7 2.3l1.7 1.7z"/></symbol>
   <symbol id="i-redo" viewBox="0 0 24 24"><path d="M16.6 7H10a6 6 0 000 12h6v-2.4h-6a3.6 3.6 0 010-7.2h6.6l-3 3 1.7 1.7 5.9-5.9-5.9-5.9-1.7 1.7z"/></symbol>
   <symbol id="i-select" viewBox="0 0 24 24"><path d="M3 5h3v2H5v1H3zm5 0h3v2H8zm5 0h3v2h-3zm5 0h3v3h-2V7h-1zM3 10h2v4H3zm16 0h2v4h-2zM3 16h2v1h1v2H3zm5 1h3v2H8zm5 0h3v2h-3zm6-1h2v3h-3v-2h1z"/></symbol>
+  <symbol id="i-rows" viewBox="0 0 24 24"><path d="M3 4.5h5v3.5H3zm7 0h11v3.5H10zM3 10.25h9v3.5H3zm11 0h7v3.5h-7zM3 16h3v3.5H3zm5 0h13v3.5H8z"/></symbol>
   <symbol id="i-lib" viewBox="0 0 24 24"><path d="M3 4h4v16H3zM8.5 4h4v16h-4zM14.2 5.1l3.9-1 4.1 15.5-3.9 1z"/></symbol>
   <symbol id="i-rep" viewBox="0 0 24 24"><path d="M3 5h12v2.2H3zM3 9.4h12v2.2H3zM3 13.8h8v2.2H3zM17 5h4v2.2h-2v8.3a3 3 0 11-2-2.8z"/></symbol>
   <symbol id="i-repadd" viewBox="0 0 24 24"><path d="M3 5h12v2.2H3zM3 9.4h12v2.2H3zM3 13.8h7v2.2H3zM16.8 12h2.4v3.8H23v2.4h-3.8V22h-2.4v-3.8H13v-2.4h3.8z"/></symbol>
@@ -74,9 +75,9 @@
     <div class="song-title" id="songTitle">—</div>
     <nav class="tb-group">
       <button class="tb" id="btnLib" title="Músicas: abrir, recentes e repertórios"><i><svg class="i" aria-hidden="true"><use href="#i-lib"/></svg></i><span>Músicas</span></button>
-      <button class="tb toggle" id="btnEdit" title="Modo edição (E)"><i><svg class="i" aria-hidden="true"><use href="#i-edit"/></svg></i><span>Editar</span></button>
+      <button class="tb toggle" id="btnTrkPanel" title="Mostrar / esconder as trilhas (compassos de cada instrumento)"><i><svg class="i" aria-hidden="true"><use href="#i-rows"/></svg></i><span>Trilhas</span></button>
       <button class="tb toggle" id="btn3d" title="Instrumento na tela (braço, teclado ou bateria)"><i><svg class="i" aria-hidden="true"><use href="#i-guitar"/></svg></i><span>Instrumento</span></button>
-      <button class="tb toggle" id="btnTracks" title="Trilhas e mixer"><i><svg class="i" aria-hidden="true"><use href="#i-mixer"/></svg></i><span>Trilhas</span></button>
+      <button class="tb toggle" id="btnTracks" title="Trilhas e mixer"><i><svg class="i" aria-hidden="true"><use href="#i-mixer"/></svg></i><span>Mixer</span></button>
       <button class="tb toggle" id="btnView" title="Visualização"><i><svg class="i" aria-hidden="true"><use href="#i-eye"/></svg></i><span>Ver</span></button>
       <button class="tb" id="btnTrkUp" title="Instrumento anterior (trilha de cima)"><i><svg class="i" aria-hidden="true"><use href="#i-up"/></svg></i><span>Anterior</span></button>
       <button class="tb" id="btnTrkDown" title="Próximo instrumento (trilha de baixo)"><i><svg class="i" aria-hidden="true"><use href="#i-down"/></svg></i><span>Próximo</span></button>
@@ -94,6 +95,7 @@
     <button data-act="new"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg><span>Nova música</span></button>
     <button data-act="save"><svg class="i" aria-hidden="true"><use href="#i-save"/></svg><span>Salvar</span><kbd>Ctrl+S</kbd></button>
     <button data-act="reps"><svg class="i" aria-hidden="true"><use href="#i-rep"/></svg><span>Repertórios</span></button>
+    <button data-act="edit" id="btnEdit"><svg class="i" aria-hidden="true"><use href="#i-edit"/></svg><span>Modo edição</span><kbd>E</kbd></button>
     <hr>
     <button data-act="saveAs"><svg class="i" aria-hidden="true"><use href="#i-saveas"/></svg><span>Salvar como .gp…</span></button>
     <button data-act="midi"><svg class="i" aria-hidden="true"><use href="#i-keys"/></svg><span>Exportar MIDI</span></button>
@@ -194,7 +196,7 @@
 
     <!-- Painel do editor -->
     <aside id="editPanel" class="side right" hidden>
-      <div class="side-head"><b>Editor</b><span id="edTrackName" class="muted"></span></div>
+      <div class="side-head"><b>Editor</b><span id="edTrackName" class="muted"></span><button type="button" class="x ed-close" id="edClose" title="Sair do modo edição"><svg class="i" aria-hidden="true"><use href="#i-close"/></svg></button></div>
       <div class="ed-section">
         <div class="ed-pos" id="edPos">Compasso 1 · Batida 1 · Corda 6</div>
         <div class="ed-fill" id="edFill"></div>

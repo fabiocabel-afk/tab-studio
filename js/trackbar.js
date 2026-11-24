@@ -49,6 +49,7 @@
       this.collapsed = !!c;
       this.el.classList.toggle('collapsed', this.collapsed);
       this.line.querySelector('.tl-arrow').innerHTML = ARROW(!this.collapsed);
+      if (this.cb.onState) this.cb.onState(this.collapsed);
       if (!this.collapsed) { this.draw(); this.scrollToBar(this.cur, true); }
       this.drawStrip();
     }

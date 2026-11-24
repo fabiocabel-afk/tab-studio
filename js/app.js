@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '2.2.1';
+  const APP_VERSION = '2.2.2';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Store = window.TabStore;
@@ -132,7 +132,8 @@
       seekToBar(bar);
     },
     onRange: (a, b, track) => { if (track !== S.primary && !S.edit) selectTrack(track, false); setRangeBars(a, b); },
-    onCollapse: c => { prefs.tbarCollapsed = c; savePrefs(); }
+    onCollapse: c => { prefs.tbarCollapsed = c; savePrefs(); },
+    onState: c => { const b = document.getElementById('btnTrkPanel'); if (b) b.classList.toggle('on', !c); }
   });
   tbar.setCollapsed(prefs.tbarCollapsed);
 
@@ -737,7 +738,7 @@
     if (on === S.edit) return;
     S.edit = on;
     document.body.classList.toggle('editing', on);
-    $('btnEdit').classList.toggle('on', on);
+    $('btnEdit').classList.toggle('on', on); $('btnEdit').querySelector('span').textContent = on ? 'Sair do modo edição' : 'Modo edição';
     $('editPanel').hidden = !on;
     if (on) {
       api.stop();
@@ -1518,7 +1519,10 @@
   $('wDemo').onclick = openDemo;
   $('wRecent').onclick = recentDialog;
   updateRecentButton();
-  $('btnEdit').onclick = () => toggleEdit();
+  $('edClose').onclick = () => toggleEdit(false);
+  // botão Trilhas do topo: abre/fecha a barra de trilhas e fica aceso quando aberta
+  $('btnTrkPanel').onclick = () => tbar.toggle();
+  $('btnTrkPanel').classList.toggle('on', !tbar.collapsed);
   $('btn3d').onclick = () => toggle3d();
   $('btnTracks').onclick = () => { const p = $('tracksPanel'); p.hidden = !p.hidden; $('btnTracks').classList.toggle('on', !p.hidden); };
   document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => { $(b.dataset.close).hidden = true; $('btnTracks').classList.toggle('on', !$('tracksPanel').hidden); });
@@ -1531,7 +1535,7 @@
     const b = e.target.closest('[data-act]'); if (!b) return;
     const act = b.dataset.act;
     closePopups();
-    ({ open: () => $('fileInput').click(), recent: recentDialog, reps: () => Rep.openLibrary('reps'), new: newSongDialog, save: () => saveGp(false), saveAs: () => saveGp(true), midi: exportMidi, print: printScore, demo: openDemo, info: infoDialog, shortcuts: shortcutsDialog, about: aboutDialog })[act]();
+    ({ open: () => $('fileInput').click(), recent: recentDialog, reps: () => Rep.openLibrary('reps'), edit: () => toggleEdit(), new: newSongDialog, save: () => saveGp(false), saveAs: () => saveGp(true), midi: exportMidi, print: printScore, demo: openDemo, info: infoDialog, shortcuts: shortcutsDialog, about: aboutDialog })[act]();
   };
 
   /* arrastar e soltar */
