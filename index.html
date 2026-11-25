@@ -57,6 +57,7 @@
   <symbol id="i-undo" viewBox="0 0 24 24"><path d="M7.4 7H14a6 6 0 010 12H8v-2.4h6a3.6 3.6 0 000-7.2H7.4l3 3-1.7 1.7L2.8 8.2 8.7 2.3l1.7 1.7z"/></symbol>
   <symbol id="i-redo" viewBox="0 0 24 24"><path d="M16.6 7H10a6 6 0 000 12h6v-2.4h-6a3.6 3.6 0 010-7.2h6.6l-3 3 1.7 1.7 5.9-5.9-5.9-5.9-1.7 1.7z"/></symbol>
   <symbol id="i-select" viewBox="0 0 24 24"><path d="M3 5h3v2H5v1H3zm5 0h3v2H8zm5 0h3v2h-3zm5 0h3v3h-2V7h-1zM3 10h2v4H3zm16 0h2v4h-2zM3 16h2v1h1v2H3zm5 1h3v2H8zm5 0h3v2h-3zm6-1h2v3h-3v-2h1z"/></symbol>
+  <symbol id="i-tone" viewBox="0 0 24 24"><path d="M8 3h7v3.6h-4.6v10.2A3.3 3.3 0 1 1 8 13.7zM18.5 4l3.5 4h-2.4v3h-2.2V8H15zM17.4 13h2.2v3H22l-3.5 4-3.5-4h2.4z"/></symbol>
   <symbol id="i-rows" viewBox="0 0 24 24"><path d="M3 4.5h5v3.5H3zm7 0h11v3.5H10zM3 10.25h9v3.5H3zm11 0h7v3.5h-7zM3 16h3v3.5H3zm5 0h13v3.5H8z"/></symbol>
   <symbol id="i-lib" viewBox="0 0 24 24"><path d="M3 4h4v16H3zM8.5 4h4v16h-4zM14.2 5.1l3.9-1 4.1 15.5-3.9 1z"/></symbol>
   <symbol id="i-rep" viewBox="0 0 24 24"><path d="M3 5h12v2.2H3zM3 9.4h12v2.2H3zM3 13.8h8v2.2H3zM17 5h4v2.2h-2v8.3a3 3 0 11-2-2.8z"/></symbol>
@@ -93,11 +94,12 @@
     <button data-act="open"><svg class="i" aria-hidden="true"><use href="#i-folder"/></svg><span>Abrir arquivo…</span><kbd>Ctrl+O</kbd></button>
     <button data-act="recent"><svg class="i" aria-hidden="true"><use href="#i-clock"/></svg><span>Arquivos recentes</span></button>
     <button data-act="new"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg><span>Nova música</span></button>
-    <button data-act="save"><svg class="i" aria-hidden="true"><use href="#i-save"/></svg><span>Salvar</span><kbd>Ctrl+S</kbd></button>
+    <button data-act="save"><svg class="i" aria-hidden="true"><use href="#i-save"/></svg><span>Salvar no app</span><kbd>Ctrl+S</kbd></button>
     <button data-act="reps"><svg class="i" aria-hidden="true"><use href="#i-rep"/></svg><span>Repertórios</span></button>
     <button data-act="edit" id="btnEdit"><svg class="i" aria-hidden="true"><use href="#i-edit"/></svg><span>Modo edição</span><kbd>E</kbd></button>
     <hr>
-    <button data-act="saveAs"><svg class="i" aria-hidden="true"><use href="#i-saveas"/></svg><span>Salvar como .gp…</span></button>
+    <button data-act="saveAs"><svg class="i" aria-hidden="true"><use href="#i-saveas"/></svg><span>Salvar como arquivo…</span><kbd>Ctrl+Shift+S</kbd></button>
+    <button data-act="download"><svg class="i" aria-hidden="true"><use href="#i-import"/></svg><span>Baixar arquivo</span></button>
     <button data-act="midi"><svg class="i" aria-hidden="true"><use href="#i-keys"/></svg><span>Exportar MIDI</span></button>
     <button data-act="print"><svg class="i" aria-hidden="true"><use href="#i-print"/></svg><span>Imprimir / PDF</span></button>
     <button data-act="demo"><svg class="i" aria-hidden="true"><use href="#i-note"/></svg><span>Abrir exemplo</span></button>
@@ -105,6 +107,12 @@
     <button data-act="shortcuts"><svg class="i" aria-hidden="true"><use href="#i-keyboard"/></svg><span>Atalhos do editor</span></button>
     <button data-act="about"><svg class="i" aria-hidden="true"><use href="#i-help"/></svg><span>Sobre</span></button>
     <div class="menu-ver" id="menuVer"></div>
+  </div>
+
+  <!-- Testar tom (player) -->
+  <div class="popover key-pop" id="keyPop" hidden>
+    <div class="kp-head"><b>Testar tom</b><span class="muted">Ouça e veja em outro tom. A música só muda se você tocar em "Aplicar à música".</span></div>
+    <div class="key-box" data-where="player"></div>
   </div>
 
   <!-- Painel de visualização -->
@@ -135,6 +143,7 @@
     <!-- Painel de trilhas -->
     <aside id="tracksPanel" class="side" hidden>
       <div class="side-head"><b>Trilhas</b><button class="x" data-close="tracksPanel" title="Fechar"><svg class="i" aria-hidden="true"><use href="#i-close"/></svg></button></div>
+      <div class="key-sec"><div class="ks-head"><b><svg class="i" aria-hidden="true"><use href="#i-tone"/></svg>Tom do conjunto</b><span class="muted">Muda todos os instrumentos juntos (a bateria não muda).</span></div><div class="key-box" data-where="mixer"></div></div>
       <div id="trackList"></div>
       <div class="side-foot edit-only">
         <select id="selNewTrack"></select>
@@ -160,6 +169,7 @@
         </div>
       </div>
       <div id="viewport">
+        <div class="tune-chip" id="tuneChip" hidden></div>
         <div id="alphaTab"></div>
       </div>
       <!-- Painel 3D -->
@@ -307,6 +317,7 @@
         <select id="selSpeed" title="Velocidade" data-icon="speed">
           <option value="0.25">25%</option><option value="0.5">50%</option><option value="0.6">60%</option><option value="0.7">70%</option><option value="0.8">80%</option><option value="0.9">90%</option><option value="1" selected>100%</option><option value="1.1">110%</option><option value="1.25">125%</option><option value="1.5">150%</option>
         </select>
+        <button class="pb sq key-btn" id="btnKey" title="Tom: testar a música em outro tom (todos os instrumentos juntos)"><svg class="i" aria-hidden="true"><use href="#i-tone"/></svg><b class="kv" id="keyVal"></b></button>
         <button class="pb sq" id="btnRepAdd" title="Adicionar esta música (com os ajustes atuais) a um repertório"><svg class="i" aria-hidden="true"><use href="#i-repadd"/></svg></button>
         <button class="pb sq tog" id="btnLoop" title="Repetir um trecho"><svg class="i" aria-hidden="true"><use href="#i-loop"/></svg></button>
         <button class="pb sq tog" id="btnMetro" title="Metrônomo"><svg class="i" aria-hidden="true"><use href="#i-metro"/></svg></button>
@@ -404,6 +415,7 @@
 <script src="js/wake.js"></script>
 <script src="js/csel.js"></script>
 <script src="js/trackbar.js"></script>
+<script src="js/transpose.js"></script>
 <script src="js/rep.js"></script>
 <script src="js/app.js"></script>
 </body>

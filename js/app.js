@@ -1,9 +1,10 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '2.2.6';
+  const APP_VERSION = '2.3.0';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
+  const Tr = window.makeTranspose(at);   // tom do conjunto (js/transpose.js)
   const Store = window.TabStore;
   const $ = id => document.getElementById(id);
   const TICKS_PER_QUARTER = 960;
@@ -34,7 +35,11 @@
     playerReady: false, playing: false, endTime: 0, seeking: false,
     mix: {}, threeTrack: 0, primary: 0, fb: null, lastTick: 0,
     pendingScroll: null,
-    rep: null, curBytes: null, repPending: false
+    rep: null, curBytes: null, repPending: false,
+    test: null, keyMode: 'auto',  // teste de tom no player (a música original fica guardada em test.orig)
+    keySkip: new Set(),           // trilhas desmarcadas (não mudam de tom)
+    chg: { key: 0, edited: false }, // o que mudou desde que abriu (vai no nome do "Salvar como")
+    srcName: '', origId: null, origKept: false
   };
   let Rep = null; // módulo de repertórios (js/rep.js), criado no fim
 
@@ -148,11 +153,12 @@
   function setScore(score, opts) {
     opts = opts || {};
     if (Rep) Rep.leaving(); // guarda os ajustes da música do repertório que está saindo
-    S.rep = opts.rep || null; S.repPending = !!opts.rep; S.curBytes = null;
+    S.rep = opts.rep || null; S.repPending = !!opts.rep; S.curBytes = null; S.test = null;
     S.score = score;
     S.fileName = opts.name || score.title || 'musica';
     S.saveHandle = opts.saveHandle || null;
-    S.undo = []; S.redo = []; S.mix = {}; S.clip = null;
+    S.undo = []; S.redo = []; S.undoChg = []; S.redoChg = []; S.mix = {}; S.clip = null;
+    S.chg = { key: 0, edited: false }; S.keySkip = new Set(); S.srcName = ''; S.origId = null; S.origKept = false;
     S.dirty = !!opts.dirty;
     S.tracks = [firstStringed(score)];
     // ajustes guardados (repertório): trilhas mostradas, a principal e o mixer
@@ -175,6 +181,7 @@
     updateTitle(); refreshTrackUI(); updateEditor();
     if (opts.enterEdit && !S.edit) toggleEdit(true);
     if (Rep) Rep.updateBar();
+    renderKeyUI();
   }
   function firstStringed(score) {
     // prefere guitarra/violão/baixo (programas GM 24–39) com tablatura visível
@@ -228,6 +235,7 @@
     render(); refreshTrackUI();
   }
   function refreshTrackUI() {
+    updateTuneChip();
     if (!S.score) return;
     if (!S.tracks.includes(S.primary)) S.primary = S.tracks[0];
     buildTrackList();
@@ -293,7 +301,7 @@
       return false;
     }
     setScore(score, Object.assign({ name: name.replace(/\.[^.]+$/, '') }, extra || {}));
-    S.curBytes = bytes;
+    S.curBytes = bytes; S.srcName = name; S.origId = hashBytes(bytes);
     toast('Aberto: ' + name + ' — ' + score.tracks.length + ' trilha(s), ' + score.masterBars.length + ' compassos', 'ok');
     return true;
   }
@@ -304,7 +312,7 @@
   async function getRecent() { try { return (await Store.get('recent')) || []; } catch (e) { return []; } }
   async function addRecent(bytes, name) {
     try {
-      if (!bytes || bytes.length > RECENT_MAX_BYTES) return;
+      if (!bytes || bytes.length > RECENT_MAX_BYTES) return false;
       const id = hashBytes(bytes);
       const sc = S.score || {};
       const meta = { id, name, title: sc.title || '', artist: sc.artist || '', size: bytes.length, time: Date.now() };
@@ -315,7 +323,8 @@
       await Store.set('recent', keep.slice(0, RECENT_MAX));
       for (const d of drop) if (d.id !== id) await gcFile(d.id);
       updateRecentButton();
-    } catch (e) { /* sem espaço no aparelho: a lista só não é atualizada */ }
+      return true;
+    } catch (e) { return false; /* sem espaço no aparelho: a lista só não é atualizada */ }
   }
   async function openRecent(id) {
     const list = await getRecent(); const meta = list.find(x => x.id === id); if (!meta) return;
@@ -488,8 +497,11 @@
     if (n.slideTarget) slideTo = n.slideTarget.fret;
     else if (n.slideOutType === at.model.SlideOutType.OutUp) slideTo = n.fret + 4;
     else if (n.slideOutType === at.model.SlideOutType.OutDown) slideTo = Math.max(0, n.fret - 4);
+    // com capotraste, a casa no braço é a do capotraste + a da tablatura
+    const capo = n.beat.voice.bar.staff.capo || 0;
+    if (capo && slideTo != null) slideTo += capo;
     return {
-      string: n.string, fret: n.fret,
+      string: n.string, fret: n.fret + capo,
       bend: n.hasBend && n.bendPoints ? n.bendPoints.map(p => ({ offset: p.offset, value: p.value })) : null,
       vibrato: n.vibrato || (n.beat.vibrato || 0),
       slideTo, dead: n.isDead, tie: n.isTieDestination, harmonic: !!n.harmonicType,
@@ -724,7 +736,8 @@
       toast('Essa edição deixou a música inválida e foi desfeita: ' + (e.message || e), 'err');
       renderKeepScroll(); return false;
     }
-    if (!opts.merge) { S.undo.push(before); trimUndo(before.length); }
+    if (!opts.merge) { S.undo.push(before); S.undoChg.push(Object.assign({}, S.chg)); trimUndo(before.length); }
+    S.chg = opts.chg ? opts.chg(Object.assign({}, S.chg)) : Object.assign({}, S.chg, { edited: true });
     S.redo = [];
     S.score = ns;
     Ops.clampCursor(S.score, S.cur);
@@ -735,18 +748,20 @@
   // limita a memória do histórico (~150 MB de texto), mínimo de 10 passos
   function trimUndo(size) {
     const max = Math.max(10, Math.min(80, Math.floor(150e6 / Math.max(1, size * 2))));
-    while (S.undo.length > max) S.undo.shift();
+    while (S.undo.length > max) { S.undo.shift(); S.undoChg.shift(); }
   }
   function undo() {
+    if (S.test) endKeyTest();
     if (!S.undo.length) { toast('Nada para desfazer'); return; }
-    S.redo.push(Ops.snapshot(S.score));
-    S.score = Ops.restore(S.undo.pop(), api.settings);
+    S.redo.push(Ops.snapshot(S.score)); S.redoChg.push(S.chg);
+    S.score = Ops.restore(S.undo.pop(), api.settings); S.chg = S.undoChg.pop() || { key: 0, edited: true };
     afterHistory();
   }
   function redo() {
+    if (S.test) endKeyTest();
     if (!S.redo.length) { toast('Nada para refazer'); return; }
-    S.undo.push(Ops.snapshot(S.score));
-    S.score = Ops.restore(S.redo.pop(), api.settings);
+    S.undo.push(Ops.snapshot(S.score)); S.undoChg.push(S.chg);
+    S.score = Ops.restore(S.redo.pop(), api.settings); S.chg = S.redoChg.pop() || { key: 0, edited: true };
     afterHistory();
   }
   function afterHistory() { Ops.clampCursor(S.score, S.cur); markDirty(); renderKeepScroll(); tbar.setScore(S.score); updateEditor(); refreshTrackUI(); }
@@ -757,6 +772,7 @@
     if (!S.score) { toast('Abra ou crie uma música primeiro'); return; }
     const on = force === undefined ? !S.edit : force;
     if (on === S.edit) return;
+    if (on && S.test) { endKeyTest(); toast('Teste de tom encerrado para editar (a música está no tom original)'); }
     S.edit = on;
     document.body.classList.toggle('editing', on);
     $('btnEdit').classList.toggle('on', on); $('btnEdit').querySelector('span').textContent = on ? 'Sair do modo edição' : 'Modo edição';
@@ -993,7 +1009,7 @@
     const ctrl = e.ctrlKey || e.metaKey;
     const k = e.key;
     if (ctrl && (k === 'o' || k === 'O')) { e.preventDefault(); $('fileInput').click(); return; }
-    if (ctrl && (k === 's' || k === 'S')) { e.preventDefault(); saveGp(e.shiftKey); return; }
+    if (ctrl && (k === 's' || k === 'S')) { e.preventDefault(); if (e.shiftKey) saveAsFile(); else saveGp(); return; }
     if (k === ' ' && !ctrl) { e.preventDefault(); if (S.score && S.playerReady) { if (!S.playing) Wake.request(); api.playPause(); } return; }
     if (!ctrl && (k === 'e' || k === 'E') && !S.edit) { toggleEdit(true); return; }
     if (!S.edit) return;
@@ -1023,45 +1039,113 @@
 
   /* ---------------- salvar / exportar ---------------- */
   function safeName(n) { return (n || 'musica').replace(/[\\/:*?"<>|]+/g, '_').trim() || 'musica'; }
-  async function saveGp(asNew) {
-    if (!S.score) { toast('Nada para salvar'); return; }
+  /* ---------------- salvar ----------------
+     Salvar        → grava a versão nova DENTRO do app (recentes e repertório). O arquivo de origem nunca é alterado,
+                     e a primeira vez guarda a versão original nos recentes com "(original)" no nome.
+     Salvar como   → gera um arquivo .gp novo, com o que mudou no fim do nome: "Música (+1 tom).gp".
+     Baixar arquivo→ baixa o arquivo como está (sem alterações: o arquivo original, no formato original). */
+  // pergunta o que fazer com um teste de tom ligado; devolve false se cancelou
+  async function settleKeyTest() {
+    if (!S.test) return true;
+    const v = await showMsg('Teste de tom ativo', 'Você está ouvindo a música <b>' + Tr.tomText(S.test.n) + '</b> só como teste. Usar o tom original ou aplicar o tom novo antes?',
+      [{ label: 'Cancelar', value: 'cancel' }, { label: 'Usar o original', value: 'orig' }, { label: 'Aplicar o tom novo', value: 'apply', primary: true }]);
+    if (v === 'orig') { endKeyTest(); return true; }
+    if (v === 'apply') return applyKey();
+    return false;
+  }
+  // exporta e confere (nada é gravado se a conferência falhar)
+  function exportChecked() {
     let data, check;
     try {
       data = new at.exporter.Gp7Exporter().export(S.score, api.settings);
       check = at.importer.ScoreLoader.loadScoreFromBytes(data, api.settings);
     } catch (e) {
-      showMsg('Falha ao salvar', 'O arquivo <b>não</b> foi salvo porque a conversão falhou:<br><span class="muted">' + esc(e.message || e) + '</span><br><br>Seu trabalho continua aberto e no rascunho automático.');
-      return;
+      showMsg('Falha ao salvar', 'A música <b>não</b> foi salva porque a conversão falhou:<br><span class="muted">' + esc(e.message || e) + '</span><br><br>Seu trabalho continua aberto e no rascunho automático.');
+      return null;
     }
     const n1 = Ops.countNotes(S.score), n2 = Ops.countNotes(check);
     if (n1 !== n2 || check.masterBars.length !== S.score.masterBars.length || check.tracks.length !== S.score.tracks.length) {
       showMsg('Verificação falhou', 'O arquivo gerado não confere com a música aberta (notas ' + n1 + ' → ' + n2 + ', compassos ' + S.score.masterBars.length + ' → ' + check.masterBars.length + '). Por segurança ele <b>não</b> foi salvo. Seu trabalho continua no rascunho automático.');
-      return;
+      return null;
     }
-    const name = safeName(S.fileName || S.score.title) + '.gp';
+    return { data, notes: n2, bars: check.masterBars.length };
+  }
+  const baseName = () => safeName((S.fileName || (S.score && S.score.title) || 'musica').replace(/\s*\(original\)\s*$/i, ''));
+  function changeSuffix() {
+    const p = [];
+    if (S.chg.key) p.push(Tr.tomShort(S.chg.key));
+    if (S.chg.edited) p.push('editada');
+    return p.length ? ' (' + p.join(', ') + ')' : '';
+  }
+  // na primeira gravação, a versão original fica nos recentes como "(original)"
+  async function keepOriginal() {
+    if (S.origKept || !S.origId) return;
+    try {
+      const list = await getRecent(), m = list.find(x => x.id === S.origId);
+      const mark = nm => /\(original\)/i.test(nm) ? nm : nm.replace(/\.[^.]+$/, '') + ' (original)' + ((/\.[^.]+$/.exec(nm) || [''])[0]);
+      if (m) { if (m.name !== mark(m.name)) { m.name = mark(m.name); await Store.set('recent', list); } }
+      else if (S.curBytes) await addRecent(S.curBytes, mark(S.srcName || (baseName() + '.gp')));   // veio do repertório: guarda a original nos recentes
+      S.origKept = true;
+    } catch (e) { /* segue: o arquivo de origem continua no aparelho */ }
+  }
+  async function saveGp() {
+    if (!S.score) { toast('Nada para salvar'); return false; }
+    if (!(await settleKeyTest())) return false;
+    const r = exportChecked(); if (!r) return false;
+    await keepOriginal();
+    const name = baseName() + '.gp';
+    const stored = await addRecent(r.data, name);
+    if (!stored) {
+      showMsg('Não foi possível salvar', 'A música <b>não</b> foi gravada no app (sem espaço no aparelho ou arquivo grande demais). Use <b>Salvar como</b> para gerar o arquivo. Seu trabalho continua aberto e no rascunho automático.');
+      return false;
+    }
+    S.dirty = false; updateTitle(); clearDraft();
+    S.curBytes = r.data; S.srcName = name; S.origId = null;
+    if (Rep) Rep.onSaved(r.data);
+    toast('Salvo no app: ' + name + ' (' + r.notes + ' notas, ' + r.bars + ' compassos)' + (S.rep ? ' — repertório atualizado' : '') + '. O arquivo de origem não foi alterado; para ter o arquivo, use "Salvar como" ou "Baixar".', 'ok', 6500);
+    return true;
+  }
+  async function saveAsFile() {
+    if (!S.score) { toast('Nada para salvar'); return false; }
+    if (!(await settleKeyTest())) return false;
+    const r = exportChecked(); if (!r) return false;
+    const name = baseName() + changeSuffix() + '.gp';
     let how = null, shownName = name;
     try {
-      if (S.saveHandle && !asNew) {
-        const w = await S.saveHandle.createWritable(); await w.write(new Blob([data])); await w.close(); how = 'file'; shownName = S.saveHandle.name;
-      } else if (window.showSaveFilePicker && !FRAMED) {
+      if (window.showSaveFilePicker && !FRAMED) {
         const h = await window.showSaveFilePicker({ suggestedName: name, types: [{ description: 'Guitar Pro 7/8', accept: { 'application/octet-stream': ['.gp'] } }] });
-        const w = await h.createWritable(); await w.write(new Blob([data])); await w.close(); S.saveHandle = h; how = 'file';
-        S.fileName = h.name.replace(/\.gp$/i, ''); shownName = h.name;
+        const w = await h.createWritable(); await w.write(new Blob([r.data])); await w.close(); how = 'file'; shownName = h.name;
       }
     } catch (e) {
-      if (e && e.name === 'AbortError') { toast('Salvamento cancelado'); return; }
+      if (e && e.name === 'AbortError') { toast('Salvamento cancelado'); return false; }
       how = null;
     }
     if (!how) {
-      const r = await deliverFile(data, name);
-      if (r !== 'download' && r !== 'zip') { fileNotDelivered(r); return; }
-      how = r; if (r === 'zip') shownName = name + '.zip';
+      const d = await deliverFile(r.data, name);
+      if (d !== 'download' && d !== 'zip') { fileNotDelivered(d); return false; }
+      how = d; if (d === 'zip') shownName = name + '.zip';
     }
+    await keepOriginal();
     S.dirty = false; updateTitle(); clearDraft();
-    S.curBytes = data;
-    addRecent(data, shownName.replace(/\.zip$/i, ''));
-    if (Rep) Rep.onSaved(data);
-    toast((how === 'file' ? 'Salvo' : 'Baixado') + ' e verificado: ' + shownName + ' (' + n2 + ' notas, ' + check.masterBars.length + ' compassos)' + (how === 'zip' ? ' — o .gp está dentro do .zip' : ''), 'ok', 5000);
+    S.curBytes = r.data; S.srcName = shownName.replace(/\.zip$/i, ''); S.fileName = S.srcName.replace(/\.gp$/i, ''); S.origId = null;
+    S.chg = { key: 0, edited: false };
+    addRecent(r.data, S.srcName);
+    if (Rep) Rep.onSaved(r.data);
+    updateTitle();
+    toast((how === 'file' ? 'Salvo' : 'Baixado') + ' e verificado: ' + shownName + ' (' + r.notes + ' notas, ' + r.bars + ' compassos)' + (how === 'zip' ? ' — o .gp está dentro do .zip' : ''), 'ok', 5000);
+    return true;
+  }
+  // baixa como está: sem alterações vai o arquivo original (no formato dele); com alterações, um .gp conferido
+  async function downloadFile() {
+    if (!S.score) { toast('Abra uma música primeiro'); return false; }
+    if (!(await settleKeyTest())) return false;
+    let data, name;
+    if (!S.dirty && S.curBytes) { data = S.curBytes; name = (S.srcName || (baseName() + '.gp')).replace(/\s*\(original\)(?=\.[^.]+$|$)/i, ''); }
+    else { const r = exportChecked(); if (!r) return false; data = r.data; name = baseName() + changeSuffix() + '.gp'; }
+    const d = await deliverFile(data, name);
+    if (d !== 'download' && d !== 'zip') { fileNotDelivered(d); return false; }
+    toast('Baixado: ' + name + (d === 'zip' ? ' (dentro de um .zip)' : ''), 'ok', 4500);
+    return true;
   }
   /* Entrega um arquivo ao usuário. Fora do link de visualização: download normal.
      Dentro do link do Claude (moldura protegida): só pela permissão de downloads, em .zip. */
@@ -1134,7 +1218,7 @@
     clearTimeout(draftT);
     draftT = setTimeout(() => {
       if (!S.score || !S.dirty) return;
-      Store.set('draft', { json: Ops.snapshot(S.score), name: S.fileName, time: Date.now(), v: APP_VERSION })
+      Store.set('draft', { json: S.test ? S.test.base : Ops.snapshot(S.score), name: S.fileName, time: Date.now(), v: APP_VERSION })
         .catch(e => toast('Atenção: não foi possível gravar o rascunho automático (' + e.message + '). Salve o arquivo para não perder o trabalho.', 'err', 8000));
     }, 1200);
   }
@@ -1235,7 +1319,7 @@
     d.showModal();
   }
   function shortcutsDialog() {
-    const rows = [['0–9', 'Casa na corda atual (dois dígitos rápidos = 10 a 30)'], ['← →', 'Batida anterior / próxima'], ['↑ ↓', 'Corda de cima / de baixo'], ['PgUp PgDn', 'Compasso anterior / próximo'], ['Enter / Insert', 'Nova batida depois'], ['Del / ⌫', 'Apagar nota (Shift: apagar batida)'], ['− / +', 'Duração mais longa / mais curta'], ['.', 'Ponto de aumento'], ['R', 'Pausa'], ['T', 'Ligadura'], ['B', 'Bend de 1 tom'], ['V', 'Vibrato (leve → largo → sem)'], ['H', 'Hammer-on / pull-off'], ['S', 'Slide'], ['P', 'Palm mute'], ['L', 'Deixar soar'], ['X', 'Nota abafada'], ['G', 'Nota fantasma'], ['Ctrl+Z / Ctrl+Y', 'Desfazer / refazer'], ['Ctrl+C / Ctrl+V', 'Copiar / colar compasso'], ['Ctrl+S', 'Salvar (.gp)'], ['Espaço', 'Tocar / pausar'], ['Esc', 'Sair do modo edição']];
+    const rows = [['0–9', 'Casa na corda atual (dois dígitos rápidos = 10 a 30)'], ['← →', 'Batida anterior / próxima'], ['↑ ↓', 'Corda de cima / de baixo'], ['PgUp PgDn', 'Compasso anterior / próximo'], ['Enter / Insert', 'Nova batida depois'], ['Del / ⌫', 'Apagar nota (Shift: apagar batida)'], ['− / +', 'Duração mais longa / mais curta'], ['.', 'Ponto de aumento'], ['R', 'Pausa'], ['T', 'Ligadura'], ['B', 'Bend de 1 tom'], ['V', 'Vibrato (leve → largo → sem)'], ['H', 'Hammer-on / pull-off'], ['S', 'Slide'], ['P', 'Palm mute'], ['L', 'Deixar soar'], ['X', 'Nota abafada'], ['G', 'Nota fantasma'], ['Ctrl+Z / Ctrl+Y', 'Desfazer / refazer'], ['Ctrl+C / Ctrl+V', 'Copiar / colar compasso'], ['Ctrl+S', 'Salvar no app'], ['Ctrl+Shift+S', 'Salvar como arquivo (.gp)'], ['Espaço', 'Tocar / pausar'], ['Esc', 'Sair do modo edição']];
     showMsg('Atalhos do editor', '<table>' + rows.map(r => '<tr><td><kbd>' + r[0] + '</kbd></td><td>' + r[1] + '</td></tr>').join('') + '</table>');
   }
   function aboutDialog() {
@@ -1375,10 +1459,11 @@
     $('p3dMsg').textContent = '';
     S.fb = inst; window.__viz = inst;
     inst.setVisible(true); inst.resize();
-    const key = S.primary + '|' + (t ? trackTuning(t).join(',') : '') + '|' + prefs.flip + '|' + (S.score ? S.score.title : '');
+    const capo = t ? (t.staves[0].capo || 0) : 0;
+    const key = S.primary + '|' + (t ? trackTuning(t).join(',') : '') + '|' + capo + '|' + prefs.flip + '|' + (S.score ? S.score.title : '');
     if (inst._tsKey !== key) {
       inst._tsKey = key;
-      if (mode.startsWith('neck')) { inst.flip = prefs.flip; inst.setInstrument(t ? trackTuning(t) : [64, 59, 55, 50, 45, 40]); }
+      if (mode.startsWith('neck')) { inst.flip = prefs.flip; inst.setInstrument(t ? trackTuning(t) : [64, 59, 55, 50, 45, 40], capo); }
       else if (mode.startsWith('drum')) inst.setTrack({ drums: t ? usedDrums(t) : [] });
       else inst.setTrack({ twoStaves: t ? t.staves.length > 1 : false });
     }
@@ -1516,9 +1601,10 @@
   /* bytes da música como está agora (alterações não salvas entram também, verificadas) */
   function currentBytes() {
     if (S.curBytes && !S.dirty) return S.curBytes;
-    const data = new at.exporter.Gp7Exporter().export(S.score, api.settings);
+    const sc = S.test ? S.test.orig : S.score;   // testando tom: vai a música original
+    const data = new at.exporter.Gp7Exporter().export(sc, api.settings);
     const check = at.importer.ScoreLoader.loadScoreFromBytes(data, api.settings);
-    if (Ops.countNotes(check) !== Ops.countNotes(S.score) || check.masterBars.length !== S.score.masterBars.length || check.tracks.length !== S.score.tracks.length) throw new Error('a conversão da música não conferiu');
+    if (Ops.countNotes(check) !== Ops.countNotes(sc) || check.masterBars.length !== sc.masterBars.length || check.tracks.length !== sc.tracks.length) throw new Error('a conversão da música não conferiu');
     return data;
   }
   function parseScore(bytes) { return at.importer.ScoreLoader.loadScoreFromBytes(bytes, api.settings); }
@@ -1532,8 +1618,141 @@
     catch (e) { return e && e.code === 'declined' ? 'declined' : 'unavailable'; }
   }
 
+  /* ---------------- tom do conjunto (testar no player / aplicar na música) ---------------- */
+  // troca a partitura desenhada mantendo o ponto, o trecho e o play
+  function swapScore(sc) {
+    const st = { play: S.playing, tick: api.tickPosition, rb: rangeBars(api.playbackRange), loop: api.isLooping };
+    if (st.play) api.pause();
+    S.score = sc;
+    Ops.clampCursor(S.score, S.cur);
+    waitMidi = true; waitRender = true;
+    renderKeepScroll(); tbar.setScore(S.score); refreshTrackUI();
+    afterMidi(() => {
+      try { if (st.rb && st.rb[1] < S.score.masterBars.length) { setRangeBars(st.rb[0], st.rb[1], true); api.isLooping = st.loop; } api.tickPosition = st.tick; } catch (e) { /* posição inválida */ }
+      if (st.play) api.play();
+    });
+    syncViz();
+  }
+  /** testa a música n meios tons acima/abaixo (não muda a música; 0 = volta ao original) */
+  function setKeyTest(n, mode) {
+    if (!S.score) return false;
+    mode = mode || S.keyMode;
+    n = Math.max(-Tr.LIMITS.RANGE, Math.min(Tr.LIMITS.RANGE, n));
+    const orig = S.test ? S.test.orig : S.score;
+    if (n !== 0) {
+      const a = Tr.analyze(orig, n, mode, S.keySkip);
+      if (!a.modes[mode].ok) {
+        if (mode !== 'auto' && a.modes.auto.ok) { toast(a.modes[mode].why + ' — usando Automático'); mode = 'auto'; }
+        else { toast('Esse tom não dá: ' + a.modes[mode].why, 'err'); renderKeyUI(); return false; }
+      }
+    }
+    S.keyMode = mode;
+    if (n === 0) { if (S.test) { const o = S.test.orig; S.test = null; swapScore(o); } renderKeyUI(); return true; }
+    if (!S.test) S.test = { base: Ops.snapshot(S.score), orig: S.score };
+    S.test.n = n; S.test.mode = mode;
+    let sc = Ops.restore(S.test.base, api.settings);
+    Tr.apply(sc, n, mode, S.keySkip);
+    sc = Ops.normalize(sc, api.settings);
+    swapScore(sc);
+    renderKeyUI();
+    return true;
+  }
+  function endKeyTest() { if (S.test) setKeyTest(0); }
+  /** leva o tom testado para a música (vira uma alteração: dá para desfazer e salvar) */
+  function applyKey() {
+    if (!S.test) return false;
+    const { n, mode, orig } = S.test;
+    const skip = new Set(S.keySkip);
+    const a = Tr.analyze(orig, n, mode, skip);
+    const st = { play: S.playing, tick: api.tickPosition, rb: rangeBars(api.playbackRange), loop: api.isLooping };
+    if (st.play) api.pause();
+    S.score = orig; S.test = null;
+    waitMidi = true; waitRender = true;
+    // tom do conjunto entra no nome do "Salvar como"; corrigir só algumas trilhas conta como "editada"
+    const ok = commit(sc => { Tr.apply(sc, n, mode, skip); }, { silent: true, chg: c => skip.size ? Object.assign(c, { edited: true }) : Object.assign(c, { key: c.key + n }) });
+    afterMidi(() => {
+      try { if (st.rb) { setRangeBars(st.rb[0], st.rb[1], true); api.isLooping = st.loop; } api.tickPosition = st.tick; } catch (e) { /* posição inválida */ }
+      if (st.play) api.play();
+    });
+    syncViz(); renderKeyUI();
+    if (ok) {
+      const how = Tr.describe(a).filter(d => !/transpostas|sem mudança/.test(d.text)).map(d => d.name + ': ' + d.text).join(' · ');
+      toast('Tom aplicado: ' + Tr.tomText(n) + (how ? ' — ' + how : '') + '. Salve para guardar no arquivo.', 'ok', 7000);
+    }
+    return ok;
+  }
+  const MODE_NAMES = { auto: 'Automático', capo: 'Capotraste', tuning: 'Afinação', shape: 'Desenho' };
+  /* aviso das cordas soltas em cima da partitura (afinação diferente da padrão, capotraste ou teste de tom) */
+  const STD_TUN = { 4: [43, 38, 33, 28], 5: [43, 38, 33, 28, 23], 6: [64, 59, 55, 50, 45, 40], 7: [64, 59, 55, 50, 45, 40, 35] };
+  function updateTuneChip() {
+    const chip = $('tuneChip'), t = S.score && S.score.tracks[S.primary];
+    const st = t && t.staves.find(s => s.tuning && s.tuning.length && !s.isPercussion);
+    if (!st) { chip.hidden = true; return; }
+    const tun = st.tuning, std = STD_TUN[tun.length], capo = st.capo || 0;
+    const odd = std && tun.join(',') !== std.join(',');
+    if (!odd && !capo && !S.test) { chip.hidden = true; return; }
+    chip.hidden = false;
+    chip.innerHTML = '<b>Cordas soltas:</b> ' + esc(Tr.tuningNames(tun)) + (capo ? ' · <b>Capotraste na casa ' + capo + '</b>' : '') + (S.test ? ' · <span class="tc-test">teste: ' + esc(Tr.tomText(S.test.n)) + '</span>' : '');
+  }
+  function renderKeyUI() {
+    updateTuneChip();
+    const n = S.test ? S.test.n : 0;
+    $('keyVal').textContent = n ? (n > 0 ? '+' : '') + n : '';
+    $('btnKey').classList.toggle('on', !!S.test);
+    document.querySelectorAll('.key-box').forEach(box => {
+      if (!box.offsetParent && box.closest('[hidden]')) return;   // só desenha o que está aberto
+      if (!S.score) { box.innerHTML = '<p class="muted">Abra uma música para mudar o tom.</p>'; return; }
+      const orig = S.test ? S.test.orig : S.score, mode = S.keyMode;
+      const sk = S.keySkip, a = Tr.analyze(orig, n, mode, sk);
+      const up = n < Tr.LIMITS.RANGE && Tr.analyze(orig, n + 1, 'auto', sk).modes.auto.ok;
+      const dn = n > -Tr.LIMITS.RANGE && Tr.analyze(orig, n - 1, 'auto', sk).modes.auto.ok;
+      const lines = Tr.describe(a);
+      if (orig.tracks.some(t => t.staves.some(s => s.isPercussion))) lines.push({ name: 'Bateria', text: 'sem mudança' });
+      const bad = n ? Object.keys(MODE_NAMES).filter(m => m !== 'auto' && !a.modes[m].ok) : [];
+      box.innerHTML =
+        '<div class="kb-row"><button type="button" class="kb-step" data-k="-1" title="Meio tom abaixo"' + (dn ? '' : ' disabled') + '>−</button>' +
+        '<div class="kb-val' + (n ? ' on' : '') + '"><b>' + (n > 0 ? '+' : '') + n + '</b><span>' + Tr.tomText(n) + '</span></div>' +
+        '<button type="button" class="kb-step" data-k="1" title="Meio tom acima"' + (up ? '' : ' disabled') + '>+</button></div>' +
+        (a.hasStr ? '<div class="kb-lbl">Como tocar nas cordas</div><div class="seg kb-modes">' + Object.keys(MODE_NAMES).map(m =>
+          '<button type="button" data-m="' + m + '"' + (m === mode ? ' class="on"' : '') + (n && !a.modes[m].ok ? ' disabled title="' + esc(a.modes[m].why) + '"' : '') + '>' + MODE_NAMES[m] + '</button>').join('') + '</div>' : '') +
+        '<div class="kb-lbl">Instrumentos que mudam</div>' +
+        '<ul class="kb-list">' + lines.map(l => '<li class="' + (l.bad ? 'bad' : '') + (l.off ? ' off' : '') + '">' + (l.i != null ? '<label class="kb-chk"><input type="checkbox" data-t="' + l.i + '"' + (l.off ? '' : ' checked') + '><b>' + esc(l.name) + '</b></label>' : '<b class="kb-fixed">' + esc(l.name) + '</b>') + '<span>' + esc(l.text) + '</span></li>').join('') + '</ul>' +
+        (sk.size ? '<div class="kb-warn">Só alguns instrumentos vão mudar. Isso serve para <b>corrigir</b> uma trilha; para mudar o tom da música, marque todos.</div>' : '') +
+        (bad.length ? '<div class="kb-why">' + bad.map(m => '<span><b>' + MODE_NAMES[m] + ':</b> ' + esc(a.modes[m].why) + '</span>').join('') + '</div>' : '') +
+        '<div class="kb-acts"><button type="button" class="btn" data-a="orig"' + (n ? '' : ' disabled') + '>Tom original</button><button type="button" class="btn primary" data-a="apply"' + (n ? '' : ' disabled') + '>Aplicar à música</button></div>';
+    });
+  }
+  document.querySelectorAll('.key-box').forEach(box => box.addEventListener('change', e => {
+    const c = e.target.closest('input[data-t]'); if (!c) return;
+    const i = Number(c.dataset.t);
+    if (c.checked) S.keySkip.delete(i); else S.keySkip.add(i);
+    if (S.test) setKeyTest(S.test.n, S.keyMode); else renderKeyUI();
+  }));
+  document.querySelectorAll('.key-box').forEach(box => box.addEventListener('click', e => {
+    e.stopPropagation();
+    if (e.target.closest('label.kb-chk')) return;
+    const b = e.target.closest('button'); if (!b || b.disabled) return;
+    const n = S.test ? S.test.n : 0;
+    if (b.dataset.k) setKeyTest(n + Number(b.dataset.k), S.keyMode);
+    else if (b.dataset.m) { if (n) setKeyTest(n, b.dataset.m); else { S.keyMode = b.dataset.m; renderKeyUI(); } }
+    else if (b.dataset.a === 'orig') setKeyTest(0);
+    else if (b.dataset.a === 'apply') { applyKey(); closePopups(); }
+  }));
+  $('btnKey').onclick = e => {
+    e.stopPropagation();
+    const p = $('keyPop'), wasHidden = p.hidden;
+    closePopups('keyPop'); p.hidden = !wasHidden;
+    if (!p.hidden) {
+      renderKeyUI();
+      const r = $('btnKey').getBoundingClientRect(), w = Math.min(360, innerWidth - 16);
+      p.style.width = w + 'px'; p.style.left = Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2)) + 'px';
+      p.style.top = 'auto'; p.style.right = 'auto'; p.style.bottom = (innerHeight - r.top + 8) + 'px';
+    }
+  };
+  $('keyPop').onclick = e => e.stopPropagation();
+
   /* ---------------- botões do topo / menus ---------------- */
-  function closePopups(except) { ['menuMore', 'viewPanel'].forEach(id => { if (id !== except) $(id).hidden = true; }); $('btnView').classList.toggle('on', !$('viewPanel').hidden); }
+  function closePopups(except) { ['menuMore', 'viewPanel', 'keyPop'].forEach(id => { if (id !== except) $(id).hidden = true; }); $('btnView').classList.toggle('on', !$('viewPanel').hidden); }
   $('wOpen').onclick = () => $('fileInput').click();
   $('fileInput').onchange = () => { const f = $('fileInput').files[0]; $('fileInput').value = ''; openFile(f); };
   $('wNew').onclick = newSongDialog;
@@ -1545,7 +1764,7 @@
   $('btnTrkPanel').onclick = () => tbar.toggle();
   $('btnTrkPanel').classList.toggle('on', !tbar.collapsed);
   $('btn3d').onclick = () => toggle3d();
-  $('btnTracks').onclick = () => { const p = $('tracksPanel'); p.hidden = !p.hidden; $('btnTracks').classList.toggle('on', !p.hidden); };
+  $('btnTracks').onclick = () => { const p = $('tracksPanel'); p.hidden = !p.hidden; $('btnTracks').classList.toggle('on', !p.hidden); if (!p.hidden) renderKeyUI(); };
   document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => { $(b.dataset.close).hidden = true; $('btnTracks').classList.toggle('on', !$('tracksPanel').hidden); });
   $('btnMore').onclick = e => { e.stopPropagation(); const m = $('menuMore'); closePopups('menuMore'); m.hidden = !m.hidden; };
   $('btnView').onclick = e => { e.stopPropagation(); const m = $('viewPanel'); closePopups('viewPanel'); m.hidden = !m.hidden; $('btnView').classList.toggle('on', !m.hidden); };
@@ -1556,7 +1775,7 @@
     const b = e.target.closest('[data-act]'); if (!b) return;
     const act = b.dataset.act;
     closePopups();
-    ({ open: () => $('fileInput').click(), recent: recentDialog, reps: () => Rep.openLibrary('reps'), edit: () => toggleEdit(), new: newSongDialog, save: () => saveGp(false), saveAs: () => saveGp(true), midi: exportMidi, print: printScore, demo: openDemo, info: infoDialog, shortcuts: shortcutsDialog, about: aboutDialog })[act]();
+    ({ open: () => $('fileInput').click(), recent: recentDialog, reps: () => Rep.openLibrary('reps'), edit: () => toggleEdit(), new: newSongDialog, save: () => saveGp(), saveAs: () => saveAsFile(), download: () => downloadFile(), midi: exportMidi, print: printScore, demo: openDemo, info: infoDialog, shortcuts: shortcutsDialog, about: aboutDialog })[act]();
   };
 
   /* arrastar e soltar */
@@ -1608,7 +1827,7 @@
     const guard = () => { try { history.pushState({ tabstudio: 1 }, ''); } catch (e) { /* sem histórico */ } };
     const closeTop = () => {
       if (window.CustomSelect && CustomSelect.isOpen()) { CustomSelect.close(); return true; }
-      if (!$('menuMore').hidden || !$('viewPanel').hidden) { closePopups(); return true; }
+      if (!$('menuMore').hidden || !$('viewPanel').hidden || !$('keyPop').hidden) { closePopups(); return true; }
       const ds = [...document.querySelectorAll('dialog[open]')];
       if (ds.length) {
         const d = ds[ds.length - 1];
@@ -1650,6 +1869,6 @@
   // ganchos para testes automatizados
   window.TabStudio = {
     version: APP_VERSION, api, Ops, state: S,
-    loadBytes, setScore, getRecent, rep: Rep, captureSettings, gcFile, openRecent, recentDialog, selectTrack, setVizMode, openLoopPanel, applyLoop, loopOff, setSpeed, seekToBar, setRangeBars, tbar, Wake: window.TabWake, zipStore, exportMidi, buildDemo, openDemo, toggleEdit, toggle3d, edAction, edSetFret, saveGp, undo, redo, commit, drawCursor
+    loadBytes, setScore, getRecent, saveAsFile, downloadFile, rep: Rep, captureSettings, gcFile, openRecent, recentDialog, selectTrack, setVizMode, openLoopPanel, applyLoop, loopOff, setSpeed, seekToBar, setRangeBars, tbar, Wake: window.TabWake, zipStore, exportMidi, buildDemo, openDemo, toggleEdit, toggle3d, edAction, edSetFret, saveGp, undo, redo, commit, drawCursor
   };
 })();

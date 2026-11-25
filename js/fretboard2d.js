@@ -35,8 +35,9 @@ export class Fretboard2D {
   }
   setCamera(v) { this.setView(v); }
   setFlip(v) { this.flip = !!v; this.dirty = true; }
-  setInstrument(tuning) {
+  setInstrument(tuning, capo) {
     this.tuning = (tuning && tuning.length) ? tuning.slice() : [64, 59, 55, 50, 45, 40];
+    this.capo = capo || 0;
     this.N = this.tuning.length;
     this.strings = [];
     for (let s = 1; s <= this.N; s++) this.strings[s] = { s, active: false, static: false, note: null, fret: 0, t0: 0, dur: 1, level: 0, release: 0, color: STRING_COLORS[(this.N - s) % STRING_COLORS.length] };
@@ -171,6 +172,15 @@ export class Fretboard2D {
       const fg = g.createLinearGradient(x - 2.5, 0, x + 2.5, 0); fg.addColorStop(0, '#7d7d86'); fg.addColorStop(0.5, '#f1f1f6'); fg.addColorStop(1, '#6e6e77');
       g.fillStyle = fg; g.fillRect(x - 2.5, G.top, 5, G.bot - G.top);
     }
+    // capotraste: barra escura atravessando o braço logo atrás da casa
+    if (this.capo > 0) {
+      const xa = this._px(fretX(this.capo - 1), G), xb = this._px(fretX(this.capo), G), cx = xb - (xb - xa) * 0.28, w = Math.max(8, (xb - xa) * 0.3);
+      if (cx > x0 && cx < W) {
+        const cg = g.createLinearGradient(cx - w / 2, 0, cx + w / 2, 0); cg.addColorStop(0, '#1a1820'); cg.addColorStop(0.5, '#45414f'); cg.addColorStop(1, '#141218');
+        g.fillStyle = cg; g.beginPath(); g.roundRect(cx - w / 2, G.top - 6, w, G.bot - G.top + 12, 5); g.fill();
+        g.fillStyle = '#c9ccd4'; g.fillRect(cx - w / 2, G.top - 6, w, 3);
+      }
+    }
     g.restore();
     // pestana
     const nutX = this._px(0, G);
@@ -178,6 +188,8 @@ export class Fretboard2D {
     // números só nas casas marcadas
     g.font = 'bold 13px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
     for (const m of MARKS) { const a = this._px(fretX(m - 1), G), b = this._px(fretX(m), G); const xm = (a + b) / 2; if (xm < G.pad || xm > W - 4) continue; g.fillStyle = m === 12 ? '#f2a33a' : '#cfc8dc'; g.fillText(String(m), xm, G.bot + 11); }
+    // nome do capotraste escrito em pé dentro da barra
+    if (this.capo > 0) { const xa = this._px(fretX(this.capo - 1), G), xb = this._px(fretX(this.capo), G), cx = xb - (xb - xa) * 0.28; if (cx > G.pad && cx < W) { g.save(); g.translate(cx, (G.top + G.bot) / 2); g.rotate(-Math.PI / 2); g.fillStyle = '#FF9901'; g.font = 'bold 11px system-ui, sans-serif'; g.fillText('CAPO ' + this.capo, 0, 1); g.restore(); } }
     // cordas
     let anim = false;
     const markers = [];
@@ -214,7 +226,7 @@ export class Fretboard2D {
         // seta: a corda continua acesa até a ponte
         g.fillStyle = st.color; g.globalAlpha = 0.85 * S.level;
         g.beginPath(); g.moveTo(W - 2, y + disp(this._xOf(W - 2, G))); g.lineTo(W - 12, y - 6); g.lineTo(W - 12, y + 6); g.closePath(); g.fill(); g.globalAlpha = 1;
-        const grow = st.static ? 1 : Math.min(1, 0.6 + 0.4 * (now - (st.hitT || st.t0)) / 130);
+        const grow = st.static ? 1 : Math.max(0.6, Math.min(1, 0.6 + 0.4 * (now - (st.hitT || st.t0)) / 130));
         markers.push({ x: S.fret > 0 ? fpx : Math.max(G.pad - 14, nutX - 14), y: y + (S.fret > 0 ? D : 0), fret: S.fret, color: st.color, level: S.level, dead: st.note && st.note.dead, open: S.fret === 0, grow, s, rf: st.fret });
       }
       // nome da corda solta

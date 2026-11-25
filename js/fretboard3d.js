@@ -150,20 +150,34 @@ export class Fretboard3D {
   }
   halfWidth(x) { return this.spacingAt(x) * (this.N - 1) / 2 + 0.6; }
 
-  setFlip(v) { this.flip = !!v; this.setInstrument(this.tuning); }
+  setFlip(v) { this.flip = !!v; this.setInstrument(this.tuning, this.capo); }
 
-  setInstrument(tuning) {
+  setInstrument(tuning, capo) {
     this.tuning = (tuning && tuning.length) ? tuning.slice() : [64, 59, 55, 50, 45, 40];
+    this.capo = capo || 0;
     this.N = this.tuning.length;
     this._clearGroup(this.static); this._clearGroup(this.dyn);
     this.strings = [];
     this._buildNeck();
+    this._addCapo();
     this._mergeStatic();
     this._buildStrings();
     this.hover = this._makeMarker('#ffffff', 0.35); this.hover.visible = false; this.dyn.add(this.hover);
     this.pv = [];
     this.cursorLine = null;
     this.dirty = true;
+  }
+  /* capotraste: barra de borracha escura com a ponta cromada, logo atrás da casa */
+  _addCapo() {
+    if (!(this.capo > 0)) return;
+    const xa = fretX(this.capo - 1), xb = fretX(this.capo), x = xb - (xb - xa) * 0.28;
+    const half = this.halfWidth(x) + 0.5, y = (this.model && this.model.userData.boardY || 0) + 0.55;
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(Math.max(0.5, (xb - xa) * 0.3), 0.45, half * 2), new THREE.MeshStandardMaterial({ color: '#25222b', roughness: 0.6, metalness: 0.1 }));
+    bar.position.set(x, y + 0.25, 0); this.static.add(bar);
+    const tip = new THREE.Mesh(new THREE.BoxGeometry(Math.max(0.5, (xb - xa) * 0.3), 0.5, 0.6), new THREE.MeshStandardMaterial({ color: '#c9ccd4', roughness: 0.25, metalness: 1 }));
+    tip.position.set(x, y + 0.25, (this.flip ? -1 : 1) * (half + 0.2)); this.static.add(tip);
+    const lab = textSprite('CAPO ' + this.capo, '#FF9901', 1.6);
+    lab.position.set(x, y + 1.6, -(this.flip ? -1 : 1) * (half + 0.9)); this.static.add(lab);
   }
   _clearGroup(g, keepMaterials) {
     while (g.children.length) {
