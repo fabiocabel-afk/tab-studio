@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '2.3.0';
+  const APP_VERSION = '2.3.1';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Tr = window.makeTranspose(at);   // tom do conjunto (js/transpose.js)
@@ -1684,16 +1684,32 @@
   const MODE_NAMES = { auto: 'Automático', capo: 'Capotraste', tuning: 'Afinação', shape: 'Desenho' };
   /* aviso das cordas soltas em cima da partitura (afinação diferente da padrão, capotraste ou teste de tom) */
   const STD_TUN = { 4: [43, 38, 33, 28], 5: [43, 38, 33, 28, 23], 6: [64, 59, 55, 50, 45, 40], 7: [64, 59, 55, 50, 45, 40, 35] };
-  function updateTuneChip() {
-    const chip = $('tuneChip'), t = S.score && S.score.tracks[S.primary];
+  /* afinação: aviso rápido embaixo da partitura (some sozinho) + informação fixa no painel Ver */
+  let tuneSig = '', tuneShownAt = 0, tuneTimer = 0;
+  function tuneHtml() {
+    const t = S.score && S.score.tracks[S.primary];
     const st = t && t.staves.find(s => s.tuning && s.tuning.length && !s.isPercussion);
-    if (!st) { chip.hidden = true; return; }
+    if (!st) return { html: '', odd: false };
     const tun = st.tuning, std = STD_TUN[tun.length], capo = st.capo || 0;
-    const odd = std && tun.join(',') !== std.join(',');
-    if (!odd && !capo && !S.test) { chip.hidden = true; return; }
-    chip.hidden = false;
-    chip.innerHTML = '<b>Cordas soltas:</b> ' + esc(Tr.tuningNames(tun)) + (capo ? ' · <b>Capotraste na casa ' + capo + '</b>' : '') + (S.test ? ' · <span class="tc-test">teste: ' + esc(Tr.tomText(S.test.n)) + '</span>' : '');
+    const odd = !!(std && tun.join(',') !== std.join(',')) || capo > 0 || !!S.test;
+    return { odd, html: '<b>Cordas soltas:</b> ' + esc(Tr.tuningNames(tun)) + (capo ? ' · <b>Capotraste na casa ' + capo + '</b>' : '') + (S.test ? ' · <span class="tc-test">teste: ' + esc(Tr.tomText(S.test.n)) + '</span>' : '') };
   }
+  function showTuneNote(html) {
+    const n = $('tuneNote');
+    n.innerHTML = html; n.hidden = false; n.classList.remove('out'); tuneShownAt = Date.now();
+    clearTimeout(tuneTimer);
+    tuneTimer = setTimeout(() => { n.classList.add('out'); tuneTimer = setTimeout(() => { n.hidden = true; }, 450); }, 5000);
+  }
+  function updateTuneChip() {
+    const { html, odd } = tuneHtml();
+    const info = $('tuneInfo');
+    info.hidden = !html; info.innerHTML = html ? html.replace('Cordas soltas:', 'Afinação da trilha:') : '';
+    // avisa quando muda (abrir música, trocar de trilha, mudar o tom) e só se não for a afinação padrão
+    const sig = (S.score ? S.score.title + '|' + S.primary + '|' : '') + html;
+    if (sig !== tuneSig) { tuneSig = sig; if (odd) showTuneNote(html); else { clearTimeout(tuneTimer); $('tuneNote').hidden = true; } }
+  }
+  // ao começar a tocar, lembra a afinação (no máximo a cada 12 s, para não repetir no tocar/pausar)
+  api.playerStateChanged.on(e => { if (e.state === 1 && Date.now() - tuneShownAt > 12000) { const { html, odd } = tuneHtml(); if (odd) showTuneNote(html); } });
   function renderKeyUI() {
     updateTuneChip();
     const n = S.test ? S.test.n : 0;
@@ -1762,6 +1778,10 @@
   $('edClose').onclick = () => toggleEdit(false);
   // botão Trilhas do topo: abre/fecha a barra de trilhas e fica aceso quando aberta
   $('btnTrkPanel').onclick = () => tbar.toggle();
+  // altura da barra de trilhas: o Mixer cobre essa área para ficar por cima
+  const setTbarH = () => document.documentElement.style.setProperty('--tbar-h', $('trackBar').offsetHeight + 'px');
+  try { new ResizeObserver(setTbarH).observe($('trackBar')); } catch (e) { addEventListener('resize', setTbarH); }
+  setTbarH();
   $('btnTrkPanel').classList.toggle('on', !tbar.collapsed);
   $('btn3d').onclick = () => toggle3d();
   $('btnTracks').onclick = () => { const p = $('tracksPanel'); p.hidden = !p.hidden; $('btnTracks').classList.toggle('on', !p.hidden); if (!p.hidden) renderKeyUI(); };
