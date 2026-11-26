@@ -37,6 +37,9 @@
   <symbol id="i-close" viewBox="0 0 24 24"><path d="M6.4 5L12 10.6 17.6 5 19 6.4 13.4 12l5.6 5.6-1.4 1.4-5.6-5.6L6.4 19 5 17.6 10.6 12 5 6.4z"/></symbol>
   <symbol id="i-chev" viewBox="0 0 24 24"><path d="M7 9.5l5 5 5-5z"/></symbol>
   <symbol id="i-chevr" viewBox="0 0 24 24"><path d="M9.5 7l5 5-5 5z"/></symbol>
+  <symbol id="i-backup" viewBox="0 0 24 24"><path d="M19.4 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A6 6 0 0 0 6 20h13a5 5 0 0 0 .4-9.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></symbol>
+  <symbol id="i-restore" viewBox="0 0 24 24"><path d="M19.4 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A6 6 0 0 0 6 20h13a5 5 0 0 0 .4-9.96zM17 13l-5 5-5-5h3V9h4v4h3z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></symbol>
   <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 2.6l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.4l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="M9.5 16.2L5.3 12l-1.4 1.4 5.6 5.6L20.1 8.4 18.7 7z"/></symbol>
   <symbol id="i-flip" viewBox="0 0 24 24"><path d="M7 4l-4 4 4 4V9h10V7H7zm10 8v3H7v2h10v3l4-4z"/></symbol>
@@ -86,9 +89,10 @@
     </nav>
     <button class="tb round fav-btn" id="btnFav" title="Favoritar esta música" aria-label="Favoritar" aria-pressed="false"><svg class="i" aria-hidden="true"><use href="#i-star"/></svg></button>
     <button class="tb round" id="btnTheme" title="Modo claro / escuro" aria-label="Modo claro / escuro"><svg class="i" aria-hidden="true"><use href="#i-moon"/></svg></button>
-    <button class="tb burger" id="btnMore" title="Menu" aria-label="Menu" aria-haspopup="true"><svg class="i" aria-hidden="true"><use href="#i-menu"/></svg></button>
+    <button class="tb burger" id="btnMore" title="Menu" aria-label="Menu" aria-haspopup="true"><svg class="i" aria-hidden="true"><use href="#i-menu"/></svg><b class="dot-badge" id="moreBadge" hidden></b></button>
     <input type="file" id="fileInput" accept=".gp,.gp3,.gp4,.gp5,.gpx,.musicxml,.mxl,.xml,.capx,.tex,.txt,.zip,.tabrep" hidden>
     <input type="file" id="repFileInput" hidden>
+    <input type="file" id="bkFileInput" accept=".zip,application/zip" hidden>
   </header>
 
   <!-- Menu "Mais" -->
@@ -99,6 +103,8 @@
     <button data-act="save"><svg class="i" aria-hidden="true"><use href="#i-save"/></svg><span>Salvar no app</span><kbd>Ctrl+S</kbd></button>
     <button data-act="reps"><svg class="i" aria-hidden="true"><use href="#i-rep"/></svg><span>Repertórios</span></button>
     <button data-act="favs"><svg class="i" aria-hidden="true"><use href="#i-star"/></svg><span>Favoritos</span></button>
+    <button data-act="backup" id="btnBackup" class="bk-item"><svg class="i" aria-hidden="true"><use href="#i-backup"/></svg><span class="bk-txt"><span>Fazer backup de tudo</span><small id="bkSub"></small></span><b class="dot-badge in" id="bkBadge" hidden></b></button>
+    <button data-act="restore"><svg class="i" aria-hidden="true"><use href="#i-restore"/></svg><span>Restaurar backup…</span></button>
     <button data-act="edit" id="btnEdit"><svg class="i" aria-hidden="true"><use href="#i-edit"/></svg><span>Modo edição</span><kbd>E</kbd></button>
     <hr>
     <button data-act="saveAs"><svg class="i" aria-hidden="true"><use href="#i-saveas"/></svg><span>Salvar como arquivo…</span><kbd>Ctrl+Shift+S</kbd></button>
@@ -429,6 +435,7 @@
 <script src="js/trackbar.js"></script>
 <script src="js/transpose.js"></script>
 <script src="js/rep.js"></script>
+<script src="js/backup.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

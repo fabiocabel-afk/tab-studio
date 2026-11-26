@@ -314,40 +314,68 @@
         if (after) after();
       };
     }
+    /* lista comprida (até 500): busca no topo e linhas desenhadas aos poucos, conforme rola */
+    const norm = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    const PAGE = 60;
+    function listWithSearch(items, boxId, makeRow, empty, ph) {
+      const body = $('libBody');
+      body.innerHTML = (items.length > 6 ? '<div class="lib-search">' + icon('search') + '<input type="search" id="libSearch" placeholder="' + ph + '" autocomplete="off" enterkeyhint="search"><span class="muted" id="libCount"></span></div>' : '') + '<div id="' + boxId + '"></div>';
+      const box = $(boxId), inp = $('libSearch');
+      let shown = [], n = 0, io = null;
+      const more = () => {
+        const end = Math.min(shown.length, n + PAGE);
+        const old = box.querySelector('.lib-more'); if (old) old.remove();
+        for (; n < end; n++) box.appendChild(makeRow(shown[n]));
+        if (io) { io.disconnect(); io = null; }
+        if (n < shown.length) {
+          const b = el('button', 'lib-more', 'Mostrar mais (' + (shown.length - n) + ')'); b.type = 'button'; b.onclick = more; box.appendChild(b);
+          if ('IntersectionObserver' in window) { io = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) more(); }, { root: body, rootMargin: '300px' }); io.observe(b); }
+        }
+      };
+      const apply = () => {
+        const q = inp ? norm(inp.value).trim() : '';
+        shown = q ? items.filter(m => q.split(/\s+/).every(w => norm(m.name + ' ' + (m.title || '') + ' ' + (m.artist || '')).includes(w))) : items;
+        box.innerHTML = ''; n = 0;
+        if (!items.length) box.innerHTML = '<p class="muted">' + empty + '</p>';
+        else if (!shown.length) box.innerHTML = '<p class="muted">Nada encontrado para “' + esc(inp.value.trim()) + '”.</p>';
+        if (inp) $('libCount').textContent = q ? shown.length + ' de ' + items.length : '';
+        more();
+      };
+      if (inp) inp.oninput = apply;
+      apply();
+    }
     async function drawFavs() {
-      const body = $('libBody'), foot = $('libFoot');
+      const foot = $('libFoot');
       const items = await C.getFavs();
-      body.innerHTML = '<div id="favList"></div>';
-      const box = $('favList');
-      if (!items.length) box.innerHTML = '<p class="muted">Nenhuma música favorita ainda. Toque na estrela (no topo, com a música aberta, ou ao lado de uma música nas listas) para guardar aqui.</p>';
-      items.forEach(m => {
+      listWithSearch(items, 'favList', m => {
         const row = recentRow(m, 'fav');
         row.querySelector('.rec-open').onclick = () => { closeLib(); C.openFav(m.id); };
         row.querySelector('.rec-add').onclick = () => pickRep('"' + m.name + '"', () => itemFromRecent(m));
         wireStar(row, m, () => drawFavs());
-        box.appendChild(row);
-      });
-      foot.innerHTML = '';
+        return row;
+      }, 'Nenhuma música favorita ainda. Toque na estrela (no topo, com a música aberta, ou ao lado de uma música nas listas) para guardar aqui.', 'Buscar nos favoritos (música ou banda)');
+      foot.innerHTML = items.length ? '<span class="muted foot-hint">' + plural(items.length, 'favorita', 'favoritas') + '</span>' : '';
     }
     async function drawRecent() {
-      const body = $('libBody'), foot = $('libFoot');
+      const foot = $('libFoot');
       const items = await C.getRecent();
-      body.innerHTML = '<div id="recentList"></div>';
-      const box = $('recentList');
-      if (!items.length) box.innerHTML = '<p class="muted">Nenhum arquivo aberto ainda. Os últimos 20 arquivos que você abrir ou salvar aparecem aqui, mesmo sem internet.</p>';
-      items.forEach(m => {
+      listWithSearch(items, 'recentList', m => {
         const row = recentRow(m, 'list');
         row.querySelector('.rec-open').onclick = () => { closeLib(); C.openRecent(m.id); };
         row.querySelector('.rec-add').onclick = () => pickRep('"' + m.name + '"', () => itemFromRecent(m));
         row.querySelector('.x').onclick = async () => { await C.removeRecent(m.id); drawRecent(); };
         wireStar(row, m);
-        box.appendChild(row);
-      });
-      foot.innerHTML = items.length ? '<button type="button" class="btn danger" id="recentClear">' + icon('trash') + 'Limpar lista</button>' : '';
-      if (items.length) $('recentClear').onclick = async () => {
-        if (!(await confirmDlg('Limpar recentes', 'Tirar todos os arquivos da lista de recentes? Os arquivos originais no seu aparelho não são apagados, e as músicas que estão em repertórios continuam nos repertórios.', 'Limpar'))) return;
-        await C.clearRecent(); drawRecent();
-      };
+        return row;
+      }, 'Nenhum arquivo aberto ainda. Os últimos ' + C.RECENT_MAX + ' arquivos que você abrir ou salvar aparecem aqui, mesmo sem internet.', 'Buscar nos recentes (música ou banda)');
+      const bytes = items.reduce((a, m) => a + (m.size || 0), 0);
+      foot.innerHTML = items.length ? '<button type="button" class="btn danger" id="recentClear">' + icon('trash') + 'Limpar lista</button><span class="muted foot-hint" id="recentInfo">' + plural(items.length, 'música', 'músicas') + ' de ' + C.RECENT_MAX + ' · ' + C.fmtSize(bytes) + '</span>' : '';
+      if (items.length) {
+        $('recentClear').onclick = async () => {
+          if (!(await confirmDlg('Limpar recentes', 'Tirar todos os arquivos da lista de recentes? Os arquivos originais no seu aparelho não são apagados, e as músicas que estão em repertórios ou favoritos continuam lá.', 'Limpar'))) return;
+          await C.clearRecent(); drawRecent();
+        };
+        C.storageWarn().then(w => { const i = $('recentInfo'); if (w && i) i.insertAdjacentHTML('beforeend', ' · <b class="warn-tx">' + esc(w) + '</b>'); });
+      }
     }
     async function drawReps() {
       const body = $('libBody'), foot = $('libFoot');
@@ -603,6 +631,27 @@
         }
       };
     }
+    /* restaurar backup: repertório que já existe igual fica como está; se mudou, o do backup entra como cópia (nada é sobrescrito) */
+    async function mergeImported(arr) {
+      const res = { added: 0, copies: 0, same: 0 };
+      const body = r => JSON.stringify([r.mode, !!r.repeat, (r.items || []).map(it => [it.fid, it.settings || null])]);
+      const sig = r => r.name + '|' + body(r);
+      await mutate(l => {
+        for (const r0 of arr) {
+          if (!r0 || !Array.isArray(r0.items)) continue;
+          const r = { id: str(r0.id) || uid(), name: str(r0.name).slice(0, 60) || 'Repertório', created: +r0.created || Date.now(), updated: +r0.updated || Date.now(), mode: r0.mode === 'count' ? 'count' : 'direct', repeat: !!r0.repeat,
+            items: r0.items.filter(it => it && str(it.fid)).map(it => ({ iid: str(it.iid) || uid(), added: +it.added || Date.now(), fid: str(it.fid), name: str(it.name), title: str(it.title), artist: str(it.artist), size: +it.size || 0, settings: cleanSettings(it.settings) })) };
+          const ex = l.find(x => x.id === r.id);
+          if (!ex) { if (l.some(x => x.name === r.name && sig(x) === sig(r))) { res.same++; continue; } l.push(r); res.added++; continue; }
+          if (sig(ex) === sig(r)) { res.same++; continue; }
+          if (l.some(x => x.id !== ex.id && body(x) === body(r) && x.name.startsWith(r.name + ' (backup'))) { res.same++; continue; }   // a cópia já foi feita antes
+          let k = 1, name; do { name = r.name + ' (backup' + (k > 1 ? ' ' + k : '') + ')'; k++; } while (l.some(x => x.name === name));
+          r.id = uid(); r.name = name; r.items.forEach(it => { it.iid = uid(); }); l.push(r); res.copies++;
+        }
+      });
+      refreshLib(); updateBar();
+      return res;
+    }
     async function isRepZip(bytes) {
       if (!bytes || bytes.length < 22 || bytes[0] !== 0x50 || bytes[1] !== 0x4b) return false;
       try { return (await readZip(bytes)).names.includes('repertorio.json'); } catch (e) { return false; }
@@ -664,6 +713,6 @@
       if (L.repId) { L.repId = null; renderLib(); return true; }
       return false;
     }
-    return { back, openLibrary, addCurrent, usesFile, leaving, onFinished, onSaved, updateBar, isRepZip, importBytes, list, openItem, step, buildExport, readZip, saveSettings, createRep, addItem };
+    return { back, openLibrary, addCurrent, usesFile, leaving, onFinished, onSaved, updateBar, isRepZip, importBytes, list, openItem, step, buildExport, readZip, saveSettings, createRep, addItem, mergeImported, extOf, refreshLib };
   };
 })(window);

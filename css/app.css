@@ -575,3 +575,20 @@ body.no-song .tb-group .tb span { display: inline; }
 .lib-tabs.tight button:not(.on) { flex: 0 0 46px; }
 .lib-tabs.tight button:not(.on) span { display: none; }
 .lib-tabs.tight button.on { flex: 1 1 auto; }
+
+/* ---------- v2.6: backup, busca nas listas ---------- */
+.tb.burger { position: relative; }
+.dot-badge { position: absolute; top: 2px; right: 0; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--pink); color: #fff; font-size: 11px; font-weight: 800; line-height: 18px; text-align: center; box-shadow: 0 0 0 2px var(--bg); pointer-events: none; }
+.dot-badge[hidden] { display: none; }
+.dot-badge.in { position: static; margin-left: auto; box-shadow: none; flex: none; }
+.menu .bk-item { align-items: center; }
+.bk-txt { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.bk-txt small { font-size: 11.5px; color: var(--tx2); font-weight: 500; }
+.bk-txt small:empty { display: none; }
+.lib-search { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 8px; background: var(--surf3); border-radius: 12px; padding: 0 12px; margin-bottom: 8px; box-shadow: 0 6px 10px -6px rgba(0,0,0,.4); }
+.lib-search svg.i { width: 18px; height: 18px; color: var(--tx2); flex: none; }
+.lib-search input { flex: 1; min-width: 0; height: 40px; border: 0; background: none; color: var(--tx); font-size: 14.5px; outline: none; }
+.lib-search span { font-size: 12px; white-space: nowrap; }
+.lib-more { width: 100%; height: 38px; margin-top: 4px; border: 1px dashed var(--line); border-radius: 12px; background: none; color: var(--pri-tx); font-weight: 700; cursor: pointer; }
+.warn-tx { color: var(--orange); }
+#recentList, #favList { display: flex; flex-direction: column; gap: 6px; }

@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '2.5.0';
+  const APP_VERSION = '2.6.0';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Tr = window.makeTranspose(at);   // tom do conjunto (js/transpose.js)
@@ -315,7 +315,7 @@
   }
   /* ---------------- arquivos recentes (até 20, guardados no aparelho) ---------------- */
   // o navegador não deixa guardar o caminho do arquivo; como os arquivos são pequenos, guardamos o conteúdo
-  const RECENT_MAX = 20, RECENT_MAX_BYTES = 20 * 1024 * 1024;
+  const RECENT_MAX = 500, RECENT_MAX_BYTES = 20 * 1024 * 1024;
   function hashBytes(b) { let h = 0x811c9dc5; for (let i = 0; i < b.length; i++) { h ^= b[i]; h = Math.imul(h, 0x01000193); } return (h >>> 0).toString(36) + '-' + b.length; }
   async function getRecent() { try { return (await Store.get('recent')) || []; } catch (e) { return []; } }
   // settings: ajustes guardados nessa música (velocidade, trilhas, mixer…); sem informar, mantém os que já tinha
@@ -327,11 +327,18 @@
       const meta = { id, name, title: sc.title || '', artist: sc.artist || '', size: bytes.length, time: Date.now() };
       const list = await getRecent();
       const old = list.find(x => x.id === id);
-      const st = settings !== undefined ? settings : (old && old.settings);
-      if (st) meta.settings = cleanSt(st);
+      let st = settings !== undefined ? settings : (old && old.settings);
+      const kept = await getKept();
+      if (!st && settings === undefined && kept[id]) st = kept[id];   // voltou para a lista: os ajustes guardados voltam junto
       const keep = [meta].concat(list.filter(x => x.id !== id && x.name !== name));
+      if (st) meta.settings = cleanSt(st);
       const drop = keep.slice(RECENT_MAX).concat(list.filter(x => x.id !== id && x.name === name));
       await Store.set('file:' + id, bytes);
+      // quem sai da lista não perde os ajustes: ficam guardados para quando o arquivo for aberto de novo
+      let kch = false;
+      if (kept[id]) { delete kept[id]; kch = true; }
+      for (const d of drop) if (d.id !== id && d.settings) { kept[d.id] = d.settings; kch = true; }
+      if (kch) await putKept(kept);
       await Store.set('recent', keep.slice(0, RECENT_MAX));
       for (const d of drop) if (d.id !== id) await gcFile(d.id);
       updateRecentButton();
@@ -403,6 +410,8 @@
     b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
     b.title = !id ? 'Favoritar (salve a música no app primeiro)' : on ? 'Tirar dos favoritos' : 'Favoritar esta música';
   }
+  async function getKept() { try { return (await Store.get('keptSettings')) || {}; } catch (e) { return {}; } }
+  async function putKept(k) { const ks = Object.keys(k); if (ks.length > 3000) for (const x of ks.slice(0, ks.length - 3000)) delete k[x]; await Store.set('keptSettings', k); }
   const cleanSt = st => { const c = JSON.parse(JSON.stringify(st)); c.loop = null; c.prog = null; return c; };
   async function saveRecentSettings(id, st) {
     try {
@@ -422,7 +431,7 @@
   async function openAsRecent(bytes, name, extra) {
     const id = hashBytes(bytes);
     const meta = (await getRecent()).find(x => x.id === id), fav = (await getFavs()).find(x => x.id === id);
-    const st = (meta && meta.settings) || (fav && fav.settings) || null;
+    const st = (meta && meta.settings) || (fav && fav.settings) || (await getKept())[id] || null;
     const metro0 = $('btnMetro').classList.contains('on'), count0 = $('btnCountIn').classList.contains('on');
     const opts = Object.assign({}, extra || {}, { recId: id }, st ? { tracks: st.tracks, primary: st.primary, mix: st.mix } : {});
     if (!loadBytes(bytes, name, opts)) return false;
@@ -449,11 +458,16 @@
   }
   async function removeRecent(id) {
     const list = await getRecent();
+    const m = list.find(x => x.id === id);
+    if (m && m.settings) { const k = await getKept(); k[id] = m.settings; await putKept(k).catch(() => { /* segue */ }); }
     await Store.set('recent', list.filter(x => x.id !== id)); await gcFile(id);
     updateRecentButton();
   }
   async function clearRecent() {
     const list = await getRecent();
+    const k = await getKept(); let kch = false;
+    for (const m of list) if (m.settings) { k[m.id] = m.settings; kch = true; }
+    if (kch) await putKept(k).catch(() => { /* segue */ });
     await Store.set('recent', []);
     for (const m of list) await gcFile(m.id);
     updateRecentButton();
@@ -467,12 +481,21 @@
     if (!inRecent && !inFav && !inRep) await Store.del('file:' + id);
   }
   async function updateRecentButton() { const n = (await getRecent()).length; $('wRecent').innerHTML = icon('clock') + '<span>Recentes' + (n ? ' (' + n + ')' : '') + '</span>'; }
-  function fmtSize(n) { return n < 1024 ? n + ' B' : (n / 1024).toFixed(n < 10240 ? 1 : 0).replace('.', ',') + ' KB'; }
+  function fmtSize(n) { return n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(n < 10240 ? 1 : 0).replace('.', ',') + ' KB' : (n / 1048576).toFixed(n < 10485760 ? 1 : 0).replace('.', ',') + ' MB'; }
+  // aviso quando o espaço que o navegador dá ao app está quase no fim
+  async function storageWarn() {
+    try {
+      if (!navigator.storage || !navigator.storage.estimate) return '';
+      const e = await navigator.storage.estimate();
+      if (e.quota && e.usage / e.quota > 0.85) return 'espaço do aparelho quase cheio (' + fmtSize(e.usage) + ' de ' + fmtSize(e.quota) + ') — faça um backup';
+    } catch (err) { /* sem estimativa */ }
+    return '';
+  }
   function recentDialog() { return Rep.openLibrary('recent'); }
   async function openFile(file, extra) {
     if (!file) return;
     if (/\.(zip|tabrep)$/i.test(file.name) && Rep) {
-      try { const b = new Uint8Array(await file.arrayBuffer()); if (await Rep.isRepZip(b)) { Rep.importBytes(b, file.name); return; } }
+      try { const b = new Uint8Array(await file.arrayBuffer()); if (await Rep.isRepZip(b)) { Rep.importBytes(b, file.name); return; } if (window.TabBackup && await window.TabBackup.isBackupZip(b)) { window.TabBackup.restore(b, file.name); return; } }
       catch (e) { showMsg('Erro ao ler arquivo', esc(e.message)); return; }
     }
     if (!(await confirmLeave())) return;
@@ -480,6 +503,7 @@
       const buf = await file.arrayBuffer();
       const bytes = new Uint8Array(buf);
       if (Rep && await Rep.isRepZip(bytes)) { Rep.importBytes(bytes, file.name); return; }
+      if (window.TabBackup && await window.TabBackup.isBackupZip(bytes)) { window.TabBackup.restore(bytes, file.name); return; }
       await openAsRecent(bytes, file.name, extra);
     } catch (e) { showMsg('Erro ao ler arquivo', esc(e.message)); }
   }
@@ -1294,7 +1318,10 @@
   /* ZIP simples (sem compressão) */
   const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
   function crc32(b) { let c = 0xFFFFFFFF; for (let i = 0; i < b.length; i++) c = CRC_T[(c ^ b[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
-  function zipStore(files) {
+  function zipStore(files) { return zipBuild(files, false); }
+  // backup grande: devolve um Blob em partes (não junta tudo num bloco só de memória)
+  function zipBlob(files) { return zipBuild(files, true); }
+  function zipBuild(files, asBlob) {
     const enc = new TextEncoder(); const parts = []; const central = []; let off = 0;
     // data/hora no formato do zip (sem isso alguns programas reclamam de "data antes de 1980")
     const now = new Date(), dTime = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1), dDate = ((Math.max(1980, now.getFullYear()) - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
@@ -1314,6 +1341,7 @@
     const end = new DataView(new ArrayBuffer(22));
     end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true); end.setUint32(12, csize, true); end.setUint32(16, off, true);
     const all = parts.concat(central, [new Uint8Array(end.buffer)]);
+    if (asBlob) return new Blob(all, { type: 'application/zip' });
     const out = new Uint8Array(all.reduce((a, b) => a + b.length, 0)); let p = 0;
     for (const a of all) { out.set(a, p); p += a.length; }
     return out;
@@ -2067,7 +2095,7 @@
   $('btn3d').onclick = () => toggle3d();
   $('btnTracks').onclick = () => { const p = $('tracksPanel'); p.hidden = !p.hidden; $('btnTracks').classList.toggle('on', !p.hidden); if (!p.hidden) renderKeyUI(); };
   document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => { $(b.dataset.close).hidden = true; $('btnTracks').classList.toggle('on', !$('tracksPanel').hidden); });
-  $('btnMore').onclick = e => { e.stopPropagation(); const m = $('menuMore'); closePopups('menuMore'); m.hidden = !m.hidden; };
+  $('btnMore').onclick = e => { e.stopPropagation(); const m = $('menuMore'); closePopups('menuMore'); m.hidden = !m.hidden; if (!m.hidden && window.TabBackup) window.TabBackup.refreshBadge(); };
   $('btnView').onclick = e => { e.stopPropagation(); const m = $('viewPanel'); closePopups('viewPanel'); m.hidden = !m.hidden; $('btnView').classList.toggle('on', !m.hidden); };
   $('viewPanel').onclick = e => e.stopPropagation();
   document.addEventListener('click', () => closePopups());
@@ -2076,7 +2104,7 @@
     const b = e.target.closest('[data-act]'); if (!b) return;
     const act = b.dataset.act;
     closePopups();
-    ({ open: () => $('fileInput').click(), recent: recentDialog, reps: () => Rep.openLibrary('reps'), favs: () => Rep.openLibrary('favs'), edit: () => toggleEdit(), new: newSongDialog, save: () => saveGp(), saveAs: () => saveAsFile(), download: () => downloadFile(), midi: exportMidi, print: printScore, demo: openDemo, info: infoDialog, shortcuts: shortcutsDialog, about: aboutDialog })[act]();
+    ({ open: () => $('fileInput').click(), recent: recentDialog, reps: () => Rep.openLibrary('reps'), favs: () => Rep.openLibrary('favs'), backup: () => Backup.exportAll(), restore: () => Backup.pickRestore(), edit: () => toggleEdit(), new: newSongDialog, save: () => saveGp(), saveAs: () => saveAsFile(), download: () => downloadFile(), midi: exportMidi, print: printScore, demo: openDemo, info: infoDialog, shortcuts: shortcutsDialog, about: aboutDialog })[act]();
   };
 
   /* arrastar e soltar */
@@ -2113,12 +2141,15 @@
   Rep = window.makeRepertoire({
     S, api, Store, $, esc, icon, toast, showMsg, confirmDlg, fmtSize, FRAMED, Wake,
     getRecent, openRecent, removeRecent, clearRecent, updateRecentButton, gcFile, hashBytes,
-    getFavs, isFav, setFav, openFav,
+    getFavs, isFav, setFav, openFav, RECENT_MAX, storageWarn, getKept, putKept, cleanSt,
     loadBytes, parseScore, currentBytes, captureSettings, applyPlaySettings, afterMidi, setCountIn,
     zipStore, deliverZip, fileNotDelivered, clearDraft, addRecent, confirmLeave, updateDisk,
     openFilePicker: () => $('fileInput').click(), newSong: () => newSongDialog()
   });
   $('btnLib').onclick = () => Rep.openLibrary();
+  const Backup = window.makeBackup({ S, Store, $, esc, toast, showMsg, APP_VERSION, FRAMED, Rep, zipBlob, deliverZip, fileNotDelivered, fmtSize, hashBytes,
+    getRecent, getFavs, getKept, putKept, cleanSt, loadFavIds, updateRecentButton, RECENT_MAX });
+  window.TabBackup = Backup;
 
   /* ---------------- botão "voltar" do celular ----------------
      Mantém uma entrada extra no histórico: cada "voltar" fecha a camada de cima
@@ -2169,7 +2200,7 @@
   checkDraft();
 
   // ganchos para testes automatizados
-  window.TabStudio = {
+  window.TabStudio = { backup: Backup,
     version: APP_VERSION, api, Ops, state: S,
     loadBytes, setScore, getRecent, saveAsFile, downloadFile, rep: Rep, captureSettings, gcFile, openRecent, recentDialog, selectTrack, setVizMode, openLoopPanel, applyLoop, loopOff, setSpeed, seekToBar, setRangeBars, tbar, Wake: window.TabWake, zipStore, exportMidi, buildDemo, openDemo, toggleEdit, toggle3d, edAction, edSetFret, saveGp, undo, redo, commit, drawCursor, updateDisk, pendingChanges
   };
