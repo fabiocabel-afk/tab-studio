@@ -30,7 +30,7 @@
       let p; try { p = await pending(); } catch (e) { return; }
       const n = p.total, txt = n > 99 ? '99+' : String(n);
       const bd = $('moreBadge'), it = $('bkBadge'), sub = $('bkSub');
-      if (bd) { bd.hidden = !n; bd.textContent = txt; }
+      if (bd) { bd.hidden = !n; bd.textContent = ''; }   // no ícone do menu: só um pontinho; o número fica lá dentro
       if (it) { it.hidden = !n; it.textContent = txt; }
       if (sub) {
         const parts = [];

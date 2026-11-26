@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '2.6.0';
+  const APP_VERSION = '2.7.0';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Tr = window.makeTranspose(at);   // tom do conjunto (js/transpose.js)
@@ -517,6 +517,7 @@
     document.title = (S.dirty ? '● ' : '') + (s.title || S.fileName || 'Tab Studio') + ' · Tab Studio';
   }
 
+  let idleRaf = 0;   // instrumento parado: redesenha uma vez por quadro
   /* ---------------- eventos do alphaTab ---------------- */
   api.error.on(e => { console.error(e); toast('Erro: ' + (e && e.message ? e.message : e), 'err'); });
   api.soundFontLoad.on(e => { if (e.total) $('plStatus').textContent = 'Carregando sons… ' + Math.round(e.loaded / e.total * 100) + '%'; });
@@ -538,11 +539,12 @@
     if (!S.seeking && e.endTime > 0) { $('rngSeek').value = Math.round(e.currentTime / e.endTime * 1000); paintRange($('rngSeek')); }
     loopCycleCheck(e.currentTick);
     S.lastTick = e.currentTick;
+    if (!S.playing) scheduleIdle();   // parado: ao mudar de lugar, o instrumento mostra as notas dali
   });
   // depois de trocar de música: espera o MIDI e o desenho ficarem prontos (o trecho depende dos dois)
   const midiWaiters = []; let waitMidi = false, waitRender = false;
   function runWaiters() { if (waitMidi || waitRender) return; midiWaiters.splice(0).forEach(f => { try { f(); } catch (e) { console.error(e); } }); }
-  api.midiLoaded.on(() => { applyMix(); waitMidi = false; runWaiters(); });
+  api.midiLoaded.on(() => { applyMix(); waitMidi = false; runWaiters(); scheduleIdle(); });
   api.postRenderFinished.on(() => { waitRender = false; runWaiters(); });
   function afterMidi(fn) { midiWaiters.push(fn); runWaiters(); }
   api.playedBeatChanged.on(beat => { if (beat && beat.voice) tbar.setPos(beat.voice.bar.index, S.playing); });
@@ -1153,6 +1155,7 @@
     if (ctrl && (k === 's' || k === 'S')) { e.preventDefault(); if (e.shiftKey) saveAsFile(); else saveGp(); return; }
     if (k === ' ' && !ctrl) { e.preventDefault(); if (S.score && S.playerReady) { if (!S.playing) Wake.request(); api.playPause(); } return; }
     if (!ctrl && (k === 'e' || k === 'E') && !S.edit) { toggleEdit(true); return; }
+    if (!S.edit && !ctrl && (k === 'ArrowLeft' || k === 'ArrowRight') && S.score) { e.preventDefault(); stepNote(k === 'ArrowRight' ? 1 : -1); return; }
     if (!S.edit) return;
     if (ctrl && (k === 'z' || k === 'Z')) { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
     if (ctrl && (k === 'y' || k === 'Y')) { e.preventDefault(); redo(); return; }
@@ -1656,7 +1659,7 @@
   [$('selVizKind'), $('selVizDim'), $('selVizView'), $('selVizPrev')].forEach(compactSelect);
   const prevAccent = () => { $('selVizPrev').dataset.cs = prefs.preview !== '0' ? 'accent' : ''; };
   prevAccent();
-  $('selVizPrev').onchange = () => { prefs.preview = $('selVizPrev').value; savePrefs(); prevAccent(); if (S.fb && prefs.preview === '0' && S.fb.setPreview) S.fb.setPreview([]); };
+  $('selVizPrev').onchange = () => { prefs.preview = $('selVizPrev').value; savePrefs(); prevAccent(); if (S.fb && prefs.preview === '0' && S.fb.setPreview) S.fb.setPreview([]); if (!S.playing) scheduleIdle(); };
   function toggle3d(force) {
     const p = $('panel3d');
     const on = force === undefined ? p.hidden : force;
@@ -1670,8 +1673,56 @@
     if (S.edit && S.cur.track === S.threeTrack) {
       const b = cursorBeat();
       S.fb.showStatic(b ? b.notes.map(noteFor3d) : [], S.cur.string);
-    } else S.fb.showStatic([], null);
+      return;
+    }
+    // parado: mostra as notas que soam onde a música está (e a prévia das próximas, se ligada)
+    const at = beatsAtTick(S.threeTrack, api.tickPosition);
+    S.fb.showStatic(at.beats.flatMap(b => b.notes.map(noteFor3d)), null);
+    if (S.fb.setPreview) S.fb.setPreview(at.beats.length ? previewNotes(at.beats) : []);
   }
+  function scheduleIdle() { if (idleRaf) return; idleRaf = requestAnimationFrame(() => { idleRaf = 0; show3dIdle(); }); }
+  /* o que soa no instante "tick" numa trilha (usa o mapa de tempo do alphaTab: respeita repetições) */
+  function findAt(track, tick) {
+    const tc = api.tickCache; if (!tc || !S.score) return null;
+    try { return tc.findBeat(new Set([track]), Math.max(0, tick)); } catch (e) { return null; }
+  }
+  function beatsAtTick(track, tick) {
+    const r = findAt(track, tick);
+    if (!r || !r.beatLookup) return { r: null, beats: [] };
+    const beats = r.beatLookup.highlightedBeats.filter(x => x.beat.voice.bar.staff.track.index === track).map(x => x.beat);
+    return { r, beats };
+  }
+  // começa nota aqui (não só pausa nem continuação de ligadura)?
+  function startsNote(r, track) {
+    return !!r && !!r.beatLookup && r.beatLookup.highlightedBeats.some(x => x.playbackStart === r.beatLookup.start && x.beat.voice.bar.staff.track.index === track && x.beat.notes.some(n => !n.isTieDestination));
+  }
+  /* ◀ ▶ ao lado do play: anda uma nota por vez (para estudar a passagem no braço / teclado / bateria) */
+  function stepNote(dir) {
+    if (!S.score || !api.tickCache) return;
+    if (S.edit) { edAction(dir > 0 ? 'right' : 'left'); return; }
+    if (S.playing) api.pause();
+    const track = S.fb && S.threeTrack >= 0 ? S.threeTrack : S.primary;
+    const tick = api.tickPosition;   // o player devolve a posição com +1 depois de um pulo: tolerância abaixo
+    let r = findAt(track, tick), guard = 0;
+    if (!r) return;
+    if (dir < 0 && tick > r.start + 8 && startsNote(r, track)) { /* estava no meio da nota: volta ao começo dela */ }
+    else {
+      do {
+        const nt = dir > 0 ? r.end : r.start - 1;
+        if (nt < 0) { toast('Começo da música'); return; }
+        const nr = findAt(track, nt);
+        if (!nr || nr.start === r.start) { if (dir > 0) toast('Fim da música'); return; }
+        r = nr;
+      } while (!startsNote(r, track) && guard++ < 4000);
+      if (!startsNote(r, track)) return;
+    }
+    api.tickPosition = r.start;
+    tbar.setPos(r.beat.voice.bar.index, false);
+    scheduleIdle();
+    try { if (api.scrollToCursor) api.scrollToCursor(); } catch (e) { /* sem rolagem automática */ }
+  }
+  $('btnStepBack').onclick = () => stepNote(-1);
+  $('btnStepFwd').onclick = () => stepNote(1);
   function on3dPick(string, fret) {
     if (!S.edit) { toast('Ative o modo edição para escrever tocando no braço'); return; }
     if (S.threeTrack < 0) return;
@@ -2202,6 +2253,6 @@
   // ganchos para testes automatizados
   window.TabStudio = { backup: Backup,
     version: APP_VERSION, api, Ops, state: S,
-    loadBytes, setScore, getRecent, saveAsFile, downloadFile, rep: Rep, captureSettings, gcFile, openRecent, recentDialog, selectTrack, setVizMode, openLoopPanel, applyLoop, loopOff, setSpeed, seekToBar, setRangeBars, tbar, Wake: window.TabWake, zipStore, exportMidi, buildDemo, openDemo, toggleEdit, toggle3d, edAction, edSetFret, saveGp, undo, redo, commit, drawCursor, updateDisk, pendingChanges
+    loadBytes, setScore, getRecent, saveAsFile, downloadFile, rep: Rep, captureSettings, gcFile, openRecent, recentDialog, selectTrack, setVizMode, openLoopPanel, applyLoop, loopOff, setSpeed, seekToBar, setRangeBars, tbar, Wake: window.TabWake, zipStore, exportMidi, buildDemo, openDemo, toggleEdit, toggle3d, edAction, edSetFret, saveGp, undo, redo, commit, drawCursor, updateDisk, pendingChanges, stepNote, beatsAtTick
   };
 })();

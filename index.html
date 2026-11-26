@@ -28,6 +28,7 @@
   <symbol id="i-prev" viewBox="0 0 24 24"><path d="M12 5v14L4 12zM20.5 5v14l-8-7z"/></symbol>
   <symbol id="i-next" viewBox="0 0 24 24"><path d="M12 5v14l8-7zM3.5 5v14l8-7z"/></symbol>
   <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.2v13.6L19 12z"/></symbol>
+  <symbol id="i-play-back" viewBox="0 0 24 24"><path d="M16 5.2v13.6L5 12z"/></symbol>
   <symbol id="i-pause" viewBox="0 0 24 24"><path d="M6.5 5h4v14h-4zM13.5 5h4v14h-4z"/></symbol>
   <symbol id="i-stop" viewBox="0 0 24 24"><path d="M6.5 6.5h11v11h-11z"/></symbol>
   <symbol id="i-loop" viewBox="0 0 24 24"><path d="M7 7h9.2l-1.6-1.6L16 4l4 4-4 4-1.4-1.4L16.2 9H7a2 2 0 00-2 2v1H3v-1a4 4 0 014-4zm10 10H7.8l1.6 1.6L8 20l-4-4 4-4 1.4 1.4L7.8 15H17a2 2 0 002-2v-1h2v1a4 4 0 01-4 4z"/></symbol>
@@ -89,7 +90,7 @@
     </nav>
     <button class="tb round fav-btn" id="btnFav" title="Favoritar esta música" aria-label="Favoritar" aria-pressed="false"><svg class="i" aria-hidden="true"><use href="#i-star"/></svg></button>
     <button class="tb round" id="btnTheme" title="Modo claro / escuro" aria-label="Modo claro / escuro"><svg class="i" aria-hidden="true"><use href="#i-moon"/></svg></button>
-    <button class="tb burger" id="btnMore" title="Menu" aria-label="Menu" aria-haspopup="true"><svg class="i" aria-hidden="true"><use href="#i-menu"/></svg><b class="dot-badge" id="moreBadge" hidden></b></button>
+    <button class="tb burger" id="btnMore" title="Menu" aria-label="Menu" aria-haspopup="true"><svg class="i" aria-hidden="true"><use href="#i-menu"/></svg><b class="dot-mark" id="moreBadge" hidden></b></button>
     <input type="file" id="fileInput" accept=".gp,.gp3,.gp4,.gp5,.gpx,.musicxml,.mxl,.xml,.capx,.tex,.txt,.zip,.tabrep" hidden>
     <input type="file" id="repFileInput" hidden>
     <input type="file" id="bkFileInput" accept=".zip,application/zip" hidden>
@@ -320,9 +321,9 @@
     <div class="pl-row">
       <div class="pl-left"><span class="pl-status" id="plStatus"></span></div>
       <div class="pl-center">
-        <div class="grp"><button class="pb l1" id="btnHome" title="Voltar ao início"><svg class="i" aria-hidden="true"><use href="#i-home"/></svg></button><button class="pb l2" id="btnPrevSys" title="Pauta anterior"><svg class="i" aria-hidden="true"><use href="#i-prev"/></svg></button></div>
+        <div class="grp"><button class="pb l1" id="btnHome" title="Voltar ao início"><svg class="i" aria-hidden="true"><use href="#i-home"/></svg></button><button class="pb mid" id="btnPrevSys" title="Pauta anterior"><svg class="i" aria-hidden="true"><use href="#i-prev"/></svg></button><button class="pb l2 step" id="btnStepBack" title="Nota anterior (←)"><svg class="i" aria-hidden="true"><use href="#i-play-back"/></svg></button></div>
         <button class="pb main" id="btnPlay" title="Tocar / pausar (Espaço)" disabled><svg class="i" aria-hidden="true"><use href="#i-play"/></svg></button>
-        <div class="grp"><button class="pb r1" id="btnNextSys" title="Próxima pauta"><svg class="i" aria-hidden="true"><use href="#i-next"/></svg></button><button class="pb r2" id="btnStop" title="Parar"><svg class="i" aria-hidden="true"><use href="#i-stop"/></svg></button></div>
+        <div class="grp"><button class="pb r1 step" id="btnStepFwd" title="Próxima nota (→)"><svg class="i" aria-hidden="true"><use href="#i-play"/></svg></button><button class="pb mid" id="btnNextSys" title="Próxima pauta"><svg class="i" aria-hidden="true"><use href="#i-next"/></svg></button><button class="pb r2" id="btnStop" title="Parar"><svg class="i" aria-hidden="true"><use href="#i-stop"/></svg></button></div>
       </div>
       <div class="pl-right">
         <select id="selSpeed" title="Velocidade" data-icon="speed">
