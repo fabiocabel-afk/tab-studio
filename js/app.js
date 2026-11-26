@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '2.4.0';
+  const APP_VERSION = '2.4.1';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Tr = window.makeTranspose(at);   // tom do conjunto (js/transpose.js)
@@ -35,7 +35,7 @@
     playerReady: false, playing: false, endTime: 0, seeking: false,
     mix: {}, threeTrack: 0, primary: 0, fb: null, lastTick: 0,
     pendingScroll: null,
-    rep: null, curBytes: null, repPending: false,
+    rep: null, recId: null, curBytes: null, repPending: false,  // recId: música dos recentes (ajustes guardados nela)
     test: null, keyMode: 'auto',  // teste de tom no player (a música original fica guardada em test.orig)
     keySkip: new Set(),           // trilhas desmarcadas (não mudam de tom)
     chg: { key: 0, edited: false }, // o que mudou desde que abriu (vai no nome do "Salvar como")
@@ -153,7 +153,7 @@
   function setScore(score, opts) {
     opts = opts || {};
     if (Rep) Rep.leaving(); // guarda os ajustes da música do repertório que está saindo
-    S.rep = opts.rep || null; S.repPending = !!opts.rep; S.repBase = null; S.curBytes = null; S.test = null;
+    S.rep = opts.rep || null; S.recId = opts.rep ? null : (opts.recId || null); S.repPending = !!(opts.rep || opts.recId); S.repBase = null; S.curBytes = null; S.test = null;
     // cada música começa "do zero": sem trecho, sem repetição, sem aumento automático e a 100%
     // (no repertório, a velocidade escolhida para a música é aplicada depois)
     api.isLooping = false; S.loopProg = null; S.speedBeforeLoop = null;
@@ -317,13 +317,17 @@
   const RECENT_MAX = 20, RECENT_MAX_BYTES = 20 * 1024 * 1024;
   function hashBytes(b) { let h = 0x811c9dc5; for (let i = 0; i < b.length; i++) { h ^= b[i]; h = Math.imul(h, 0x01000193); } return (h >>> 0).toString(36) + '-' + b.length; }
   async function getRecent() { try { return (await Store.get('recent')) || []; } catch (e) { return []; } }
-  async function addRecent(bytes, name) {
+  // settings: ajustes guardados nessa música (velocidade, trilhas, mixer…); sem informar, mantém os que já tinha
+  async function addRecent(bytes, name, settings) {
     try {
       if (!bytes || bytes.length > RECENT_MAX_BYTES) return false;
       const id = hashBytes(bytes);
       const sc = S.score || {};
       const meta = { id, name, title: sc.title || '', artist: sc.artist || '', size: bytes.length, time: Date.now() };
       const list = await getRecent();
+      const old = list.find(x => x.id === id);
+      const st = settings !== undefined ? settings : (old && old.settings);
+      if (st) meta.settings = cleanSt(st);
       const keep = [meta].concat(list.filter(x => x.id !== id && x.name !== name));
       const drop = keep.slice(RECENT_MAX).concat(list.filter(x => x.id !== id && x.name === name));
       await Store.set('file:' + id, bytes);
@@ -333,12 +337,48 @@
       return true;
     } catch (e) { return false; /* sem espaço no aparelho: a lista só não é atualizada */ }
   }
+  const cleanSt = st => { const c = JSON.parse(JSON.stringify(st)); c.loop = null; c.prog = null; return c; };
+  async function saveRecentSettings(id, st) {
+    try {
+      const list = await getRecent(), m = list.find(x => x.id === id);
+      if (!m) throw new Error('a música não está mais nos recentes');
+      m.settings = cleanSt(st);
+      await Store.set('recent', list);
+      return true;
+    } catch (e) {
+      showMsg('Ajustes não guardados', 'Os ajustes <b>não</b> foram guardados: ' + esc(e.message || e) + '. A música continua aberta com eles; tente aplicar de novo.');
+      return false;
+    }
+  }
+  /** abre uma música que fica nos recentes, com os ajustes que a pessoa aplicou nela */
+  let recSeq = 0;
+  async function openAsRecent(bytes, name, extra) {
+    const id = hashBytes(bytes);
+    const meta = (await getRecent()).find(x => x.id === id);
+    const st = (meta && meta.settings) || null;
+    const metro0 = $('btnMetro').classList.contains('on'), count0 = $('btnCountIn').classList.contains('on');
+    const opts = Object.assign({}, extra || {}, { recId: id }, st ? { tracks: st.tracks, primary: st.primary, mix: st.mix } : {});
+    if (!loadBytes(bytes, name, opts)) return false;
+    clearDraft();
+    const sc = S.score, token = ++recSeq;
+    const stored = await addRecent(bytes, name);
+    if (!stored && S.score === sc) S.recId = null;   // sem espaço: não há onde guardar ajustes
+    let done = false;
+    const apply = () => {
+      if (done || token !== recSeq || S.score !== sc || !S.repPending || S.rep) return;
+      done = true;
+      applyPlaySettings(st || { speed: 100, metro: metro0, countIn: count0 });
+    };
+    afterMidi(apply);
+    setTimeout(apply, 8000); // segurança: se o MIDI demorar, aplica assim mesmo
+    return true;
+  }
   async function openRecent(id) {
     const list = await getRecent(); const meta = list.find(x => x.id === id); if (!meta) return;
     if (!(await confirmLeave())) return;
     let bytes = null; try { bytes = await Store.get('file:' + id); } catch (e) { bytes = null; }
     if (!bytes) { toast('Esse arquivo não está mais guardado no aparelho — abra pelo "Abrir arquivo"', 'err'); await removeRecent(id); return; }
-    if (loadBytes(bytes, meta.name)) { clearDraft(); addRecent(bytes, meta.name); }
+    await openAsRecent(bytes, meta.name);
   }
   async function removeRecent(id) {
     const list = await getRecent();
@@ -372,7 +412,7 @@
       const buf = await file.arrayBuffer();
       const bytes = new Uint8Array(buf);
       if (Rep && await Rep.isRepZip(bytes)) { Rep.importBytes(bytes, file.name); return; }
-      if (loadBytes(bytes, file.name, extra)) { clearDraft(); addRecent(bytes, file.name); }
+      await openAsRecent(bytes, file.name, extra);
     } catch (e) { showMsg('Erro ao ler arquivo', esc(e.message)); }
   }
 
@@ -1102,13 +1142,16 @@
     const r = exportChecked(); if (!r) return false;
     await keepOriginal();
     const name = baseName() + '.gp';
-    const stored = await addRecent(r.data, name);
+    // música dos recentes: o arquivo novo leva os ajustes já aplicados; música nova passa a ter os de agora
+    const carry = S.rep ? undefined : (S.recId ? S.repBase : (captureSettings() || undefined));
+    const stored = await addRecent(r.data, name, carry);
     if (!stored) {
       showMsg('Não foi possível salvar', 'A música <b>não</b> foi gravada no app (sem espaço no aparelho ou arquivo grande demais). Use <b>Salvar como</b> para gerar o arquivo. Seu trabalho continua aberto e no rascunho automático.');
       return false;
     }
     S.dirty = false; updateTitle(); clearDraft();
     S.curBytes = r.data; S.srcName = name; S.origId = null;
+    if (!S.rep) { S.recId = hashBytes(r.data); if (carry) S.repBase = JSON.parse(JSON.stringify(carry)); }
     if (Rep) Rep.onSaved(r.data);
     toast('Salvo no app: ' + name + ' (' + r.notes + ' notas, ' + r.bars + ' compassos)' + (S.rep ? ' — repertório atualizado' : '') + '. O arquivo de origem não foi alterado; para ter o arquivo, use "Salvar como" ou "Baixar".', 'ok', 6500);
     return true;
@@ -1137,7 +1180,8 @@
     S.dirty = false; updateTitle(); clearDraft();
     S.curBytes = r.data; S.srcName = shownName.replace(/\.zip$/i, ''); S.fileName = S.srcName.replace(/\.gp$/i, ''); S.origId = null;
     S.chg = { key: 0, edited: false };
-    addRecent(r.data, S.srcName);
+    const carry = S.rep ? undefined : (S.recId ? S.repBase : (captureSettings() || undefined));
+    if (await addRecent(r.data, S.srcName, carry) && !S.rep) { S.recId = hashBytes(r.data); if (carry) S.repBase = JSON.parse(JSON.stringify(carry)); }
     if (Rep) Rep.onSaved(r.data);
     updateTitle();
     toast((how === 'file' ? 'Salvo' : 'Baixado') + ' e verificado: ' + shownName + ' (' + r.notes + ' notas, ' + r.bars + ' compassos)' + (how === 'zip' ? ' — o .gp está dentro do .zip' : ''), 'ok', 5000);
@@ -1593,7 +1637,7 @@
     // trecho/repetição guardados por versões antigas são ignorados: a música sempre começa sem repetição
     try { api.tickPosition = 0; } catch (e) { /* sem MIDI */ }
     S.repPending = false;
-    S.repBase = S.rep ? captureSettings() : null;   // o que está aplicado; mudanças depois disso ficam pendentes (disquete)
+    S.repBase = (S.rep || S.recId) ? captureSettings() : null;   // o que está aplicado; mudanças depois disso ficam pendentes (disquete)
     updateLoopStatus();
   }
   /* bytes da música como está agora (alterações não salvas entram também, verificadas) */
@@ -1778,14 +1822,15 @@
   }
   function pendingChanges() {
     const out = [];
-    if (S.rep && !S.repPending && S.repBase) {
+    if ((S.rep || S.recId) && !S.repPending && S.repBase) {
       const b = S.repBase, c = captureSettings();
       if (c) {
         out.cur = c;
         if ((b.speed || 100) !== c.speed) out.push({ id: 'speed', label: 'Velocidade', from: (b.speed || 100) + '%', to: c.speed + '%' });
-        if (b.primary !== c.primary) out.push({ id: 'primary', label: 'Trilha principal', from: trackLabel(b.primary), to: trackLabel(c.primary) });
+        // trilhas na tela + a principal (a que comanda o instrumento) numa linha só
+        const tl = (ts, p) => { ts = (ts || []).slice().sort((x, y) => x - y); return ts.length > 1 ? ts.map(i => trackLabel(i) + (i === p ? ' (principal)' : '')).join(', ') : ts.map(trackLabel).join(', '); };
         const bt = (b.tracks || []).slice().sort((x, y) => x - y), ct = c.tracks.slice().sort((x, y) => x - y);
-        if (bt.join(',') !== ct.join(',')) out.push({ id: 'tracks', label: 'Trilhas na tela', from: bt.map(trackLabel).join(', '), to: ct.map(trackLabel).join(', ') });
+        if (bt.join(',') !== ct.join(',') || b.primary !== c.primary) out.push({ id: 'tracks', label: 'Trilhas', from: tl(b.tracks, b.primary), to: tl(c.tracks, c.primary) });
         if (!!b.metro !== !!c.metro) out.push({ id: 'metro', label: 'Metrônomo', from: onOff(b.metro), to: onOff(c.metro) });
         if (!!b.countIn !== !!c.countIn) out.push({ id: 'countIn', label: 'Contagem antes de tocar', from: onOff(b.countIn), to: onOff(c.countIn) });
         const bm = b.mix || {}, keys = new Set([...Object.keys(bm), ...Object.keys(c.mix)]);
@@ -1793,9 +1838,11 @@
       }
     }
     if (S.dirty && S.score) {
-      const p = []; if (S.chg.key) p.push('tom ' + Tr.tomText(S.chg.key)); if (S.chg.edited || !S.chg.key) p.push('notas editadas');
-      out.push({ id: 'score', score: true, label: 'Música alterada', to: p.join(' e ') + ' (salva no app)' });
+      // tom e notas ficam no mesmo arquivo: uma caixinha só
+      const k = S.chg.key, e = S.chg.edited || !k;
+      out.push({ id: 'score', score: true, label: k && e ? 'Tom e notas editadas' : k ? 'Tom' : 'Notas editadas', from: k ? 'original' : null, to: (k ? Tr.tomText(k) : 'notas alteradas') + (k && e ? ' + notas alteradas' : '') + ' (salva no app)' });
     }
+    if (S.test && S.score) out.push({ id: 'test', score: true, test: true, label: 'Tom em teste', from: S.chg.key ? Tr.tomText(S.chg.key) : 'original', to: Tr.tomText(S.chg.key + S.test.n) + ' — aplica e salva no app' });
     return out;
   }
   function applyDialog(mode, items) {
@@ -1817,19 +1864,24 @@
   }
   async function applySelected(sel, all) {
     const ids = sel.filter(x => !x.score).map(x => x.id);
-    if (ids.length && S.rep && S.repBase) {
-      const cur = all.cur || captureSettings(), nb = JSON.parse(JSON.stringify(S.repBase));
+    const cur0 = all.cur || captureSettings();
+    // primeiro a música (tom/notas): ao salvar no app ela ganha um arquivo novo nos recentes
+    if (sel.some(x => x.score)) {
+      if (S.test) { if (sel.some(x => x.test)) { if (!applyKey()) return false; } else endKeyTest(); }
+      if (!(await saveGp())) return false;
+    }
+    if (ids.length && (S.rep || S.recId) && S.repBase) {
+      const cur = cur0 || captureSettings(), nb = JSON.parse(JSON.stringify(S.repBase));
       nb.mix = nb.mix || {};
       for (const id of ids) {
         if (id.startsWith('mix:')) { const k = id.slice(4); if (cur.mix[k]) nb.mix[k] = cur.mix[k]; else delete nb.mix[k]; }
+        else if (id === 'tracks') { nb.tracks = cur.tracks.slice(); nb.primary = cur.primary; nb.trackName = cur.trackName; }
         else nb[id] = cur[id];
-        if (id === 'primary') nb.trackName = cur.trackName;
       }
       nb.loop = null; nb.prog = null;
-      if (!(await Rep.saveSettings(S.rep.id, S.rep.iid, nb))) return false;
+      if (!(S.rep ? await Rep.saveSettings(S.rep.id, S.rep.iid, nb) : await saveRecentSettings(S.recId, nb))) return false;
       S.repBase = nb;
     }
-    if (sel.some(x => x.score) && !(await saveGp())) return false;
     updateDisk();
     return true;
   }
