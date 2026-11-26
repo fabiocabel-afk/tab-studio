@@ -257,7 +257,7 @@
     const L = { tab: 'recent', repId: null, adding: false };
     function refreshLib() { if ($('dlgLib').open) renderLib(); }
     async function openLibrary(where) {
-      if (where === 'recent' || where === 'reps') { L.tab = where; L.repId = null; L.adding = false; }
+      if (where === 'recent' || where === 'reps' || where === 'favs') { L.tab = where; L.repId = null; L.adding = false; }
       else if (where && where.rep) { L.tab = 'reps'; L.repId = where.rep; L.adding = false; }
       else if (S.rep) { L.tab = 'reps'; L.repId = S.rep.id; L.adding = false; }
       await renderLib();
@@ -270,7 +270,8 @@
         b.classList.toggle('on', b.dataset.tab === L.tab);
         b.onclick = () => { L.tab = b.dataset.tab; L.repId = null; L.adding = false; renderLib(); };
       });
-      // a janela fica sempre igual: título, as duas guias e o corpo; só o conteúdo do corpo muda
+      fitTabs();
+      // a janela fica sempre igual: título, as guias e o corpo; só o conteúdo do corpo muda
       const head = $('libHead');
       if (!head.firstChild) {
         head.innerHTML = '<h3>' + icon('lib') + '<span>Músicas</span></h3><button type="button" class="x" data-close title="Fechar">' + icon('close') + '</button>';
@@ -281,16 +282,52 @@
         if (r) return L.adding ? drawAdd(r) : drawRep(r);
         L.repId = null;
       }
-      return L.tab === 'recent' ? drawRecent() : drawReps();
+      return L.tab === 'recent' ? drawRecent() : L.tab === 'favs' ? drawFavs() : drawReps();
     }
+    // guias sempre numa linha: se os nomes não cabem, as outras guias ficam só com o ícone
+    function fitTabs() {
+      const t = $('libTabs'); t.classList.remove('tight');
+      if (!$('dlgLib').open && !t.offsetWidth) { requestAnimationFrame(fitTabs); return; }
+      const over = [...t.querySelectorAll('button span')].some(s => s.scrollWidth > s.clientWidth + 1);
+      t.classList.toggle('tight', over || t.scrollWidth > t.clientWidth + 1);
+    }
+    window.addEventListener('resize', () => { if ($('dlgLib').open) fitTabs(); });
     function recentRow(m, mode, inRep) {
       const row = el('div', 'rec');
       const sub = [m.title && m.title !== m.name.replace(/\.[^.]+$/, '') ? m.title : '', m.artist].filter(Boolean).join(' — ');
       row.innerHTML = '<button type="button" class="rec-open"><b>' + esc(m.name) + '</b><span>' + (sub ? esc(sub) + ' · ' : '') + C.fmtSize(m.size) + ' · ' + new Date(m.time).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) + '</span></button>' +
         (mode === 'pick'
           ? (inRep ? '<span class="rec-in" title="Já está no repertório">' + icon('check') + '</span>' : '<button type="button" class="rec-add" title="Adicionar ao repertório">' + icon('plus') + '</button>')
-          : '<button type="button" class="rec-add" title="Adicionar a um repertório">' + icon('repadd') + '</button><button type="button" class="x" title="Tirar da lista">' + icon('close') + '</button>');
+          : starBtn(m.id) + '<button type="button" class="rec-add" title="Adicionar a um repertório">' + icon('repadd') + '</button>' + (mode === 'fav' ? '' : '<button type="button" class="x" title="Tirar da lista">' + icon('close') + '</button>'));
       return row;
+    }
+    /* estrela de favorito nas listas (cinza = não é favorita; mostarda = favorita) */
+    function starBtn(id) { const on = C.isFav(id); return '<button type="button" class="star' + (on ? ' on' : '') + '" data-fid="' + esc(id) + '" title="' + (on ? 'Tirar dos favoritos' : 'Favoritar') + '" aria-pressed="' + on + '">' + icon('star') + '</button>'; }
+    function wireStar(row, meta, after) {
+      const b = row.querySelector('.star'); if (!b) return;
+      b.onclick = async e => {
+        e.stopPropagation(); b.disabled = true;
+        const on = !C.isFav(meta.id);
+        if (await C.setFav(meta, on)) toast(on ? 'Adicionada aos favoritos' : 'Tirada dos favoritos', on ? 'ok' : '');
+        b.disabled = false; b.classList.toggle('on', C.isFav(meta.id)); b.setAttribute('aria-pressed', C.isFav(meta.id));
+        b.title = C.isFav(meta.id) ? 'Tirar dos favoritos' : 'Favoritar';
+        if (after) after();
+      };
+    }
+    async function drawFavs() {
+      const body = $('libBody'), foot = $('libFoot');
+      const items = await C.getFavs();
+      body.innerHTML = '<div id="favList"></div>';
+      const box = $('favList');
+      if (!items.length) box.innerHTML = '<p class="muted">Nenhuma música favorita ainda. Toque na estrela (no topo, com a música aberta, ou ao lado de uma música nas listas) para guardar aqui.</p>';
+      items.forEach(m => {
+        const row = recentRow(m, 'fav');
+        row.querySelector('.rec-open').onclick = () => { closeLib(); C.openFav(m.id); };
+        row.querySelector('.rec-add').onclick = () => pickRep('"' + m.name + '"', () => itemFromRecent(m));
+        wireStar(row, m, () => drawFavs());
+        box.appendChild(row);
+      });
+      foot.innerHTML = '';
     }
     async function drawRecent() {
       const body = $('libBody'), foot = $('libFoot');
@@ -303,6 +340,7 @@
         row.querySelector('.rec-open').onclick = () => { closeLib(); C.openRecent(m.id); };
         row.querySelector('.rec-add').onclick = () => pickRep('"' + m.name + '"', () => itemFromRecent(m));
         row.querySelector('.x').onclick = async () => { await C.removeRecent(m.id); drawRecent(); };
+        wireStar(row, m);
         box.appendChild(row);
       });
       foot.innerHTML = items.length ? '<button type="button" class="btn danger" id="recentClear">' + icon('trash') + 'Limpar lista</button>' : '';
@@ -368,7 +406,8 @@
         row.dataset.iid = it.iid;
         row.innerHTML = '<span class="grip" title="Arrastar para mudar a ordem">' + icon('grip') + '</span><span class="ri-n">' + (i + 1) + '</span>' +
           '<button type="button" class="ri-open"><b>' + esc(songName(it)) + '</b><span>' + (it.artist ? esc(it.artist) : '') + chips(it.settings) + '</span></button>' +
-          '<button type="button" class="x ri-del" title="Tirar do repertório">' + icon('close') + '</button>';
+          starBtn(it.fid) + '<button type="button" class="x ri-del" title="Tirar do repertório">' + icon('close') + '</button>';
+        wireStar(row, { id: it.fid, name: it.name || songName(it), title: it.title, artist: it.artist, size: it.size });
         row.querySelector('.ri-open').onclick = async () => { const idx = [...ul.querySelectorAll('.ri')].indexOf(row); closeLib(); openItem(r.id, idx, false); };
         row.querySelector('.ri-del').onclick = async () => {
           if (!(await confirmDlg('Tirar do repertório', 'Tirar <b>' + esc(songName(it)) + '</b> do repertório <b>' + esc(r.name) + '</b>? Os ajustes guardados dela neste repertório serão perdidos.', 'Tirar'))) return;

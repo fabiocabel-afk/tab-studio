@@ -536,3 +536,42 @@ dialog.lib #recentList { min-width: 0; max-height: none; overflow: visible; }
 .ap-chk b { font-size: 14px; }
 .ap-chk i { font-style: normal; font-size: 12.5px; color: var(--tx2); }
 #apMenu { display: flex; gap: 8px; justify-content: flex-end; padding: 0; margin: 0; }
+
+/* ---------- v2.5: favoritos, desfazer alterações, tela sem música ---------- */
+:root { --mustard: #E1AD01; }
+#btnFav { color: var(--tx2); }
+#btnFav svg.i { opacity: .55; }
+#btnFav.on, #btnFav.on:hover { background: var(--surf); color: var(--mustard); box-shadow: var(--shadow-sm); }
+#btnFav.on svg.i { opacity: 1; filter: drop-shadow(0 0 4px rgba(225,173,1,.45)); }
+.star { flex: none; width: 38px; height: 38px; border: 0; border-radius: 10px; background: none; color: var(--tx2); display: inline-grid; place-items: center; cursor: pointer; padding: 0; }
+.star svg.i { width: 20px; height: 20px; opacity: .4; }
+.star:hover { background: var(--surf3); }
+.star:hover svg.i { opacity: .7; }
+.star.on { color: var(--mustard); }
+.star.on svg.i { opacity: 1; }
+.ri .star { width: 34px; height: 34px; }
+/* sem música aberta: só o que tem uso (o player fica, só de enfeite) */
+body.no-song #btnTrkPanel, body.no-song #btn3d, body.no-song #btnTracks, body.no-song #btnView,
+body.no-song #btnTrkUp, body.no-song #btnTrkDown, body.no-song #btnFav,
+body.no-song #trackBar, body.no-song #tracksPanel, body.no-song #panel3d, body.no-song #tuneNote { display: none !important; }
+body.no-song .tb-group .tb span { display: inline; }
+/* lista do disquete: X em cada linha e "Remover tudo" à esquerda */
+.ap-list li { display: flex; align-items: stretch; gap: 6px; }
+.ap-list li .ap-chk { flex: 1; min-width: 0; }
+.ap-x { flex: none; width: 36px; border: 0; border-radius: 10px; background: var(--surf2); color: var(--tx2); display: grid; place-items: center; cursor: pointer; padding: 0; }
+.ap-x:hover { background: var(--pink, #EC357D); color: #fff; }
+.ap-x svg.i { width: 18px; height: 18px; }
+#apMenu .left { margin-right: auto; }
+#apMenu .btn svg.i { width: 16px; height: 16px; }
+/* guias da janela Músicas: sempre numa linha */
+.lib-tabs { flex-wrap: nowrap; }
+.lib-tabs button { min-width: 0; flex: 1 1 auto; font-size: 13.5px; gap: 5px; padding: 0 6px; white-space: nowrap; }
+.lib-tabs button span { overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 430px) {
+  .lib-tabs button { font-size: 12.5px; gap: 4px; padding: 0 4px; }
+  .lib-tabs button svg.i { width: 15px; height: 15px; }
+}
+/* não coube: só ícones, menos a guia escolhida (decidido pelo app conforme a largura) */
+.lib-tabs.tight button:not(.on) { flex: 0 0 46px; }
+.lib-tabs.tight button:not(.on) span { display: none; }
+.lib-tabs.tight button.on { flex: 1 1 auto; }

@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '2.4.1';
+  const APP_VERSION = '2.5.0';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Tr = window.makeTranspose(at);   // tom do conjunto (js/transpose.js)
@@ -309,6 +309,7 @@
     }
     setScore(score, Object.assign({ name: name.replace(/\.[^.]+$/, '') }, extra || {}));
     S.curBytes = bytes; S.srcName = name; S.origId = hashBytes(bytes);
+    updateDisk();
     toast('Aberto: ' + name + ' — ' + score.tracks.length + ' trilha(s), ' + score.masterBars.length + ' compassos', 'ok');
     return true;
   }
@@ -337,6 +338,71 @@
       return true;
     } catch (e) { return false; /* sem espaço no aparelho: a lista só não é atualizada */ }
   }
+  /* ---------------- favoritos (o arquivo fica guardado no aparelho enquanto for favorito) ---------------- */
+  async function getFavs() { try { return (await Store.get('favs')) || []; } catch (e) { return []; } }
+  let curIdCache = { b: null, id: null };
+  function curFileId() {   // identidade da música aberta = o arquivo guardado (null: música nova ainda não salva)
+    const b = S.curBytes; if (!b) return null;
+    if (curIdCache.b !== b) curIdCache = { b, id: hashBytes(b) };
+    return curIdCache.id;
+  }
+  let favIds = new Set();
+  async function loadFavIds() { favIds = new Set((await getFavs()).map(x => x.id)); updateFavBtn(); }
+  function isFav(id) { return !!id && favIds.has(id); }
+  async function setFav(meta, on, bytes) {
+    try {
+      const list = await getFavs(), i = list.findIndex(x => x.id === meta.id);
+      if (on) {
+        if (bytes) await Store.set('file:' + meta.id, bytes);
+        else if (!(await Store.get('file:' + meta.id))) throw new Error('o arquivo não está mais guardado no aparelho');
+        const e = { id: meta.id, name: meta.name, title: meta.title || '', artist: meta.artist || '', size: meta.size || 0, time: Date.now() };
+        if (meta.settings) e.settings = cleanSt(meta.settings);
+        if (i >= 0) list[i] = Object.assign(list[i], e); else list.unshift(e);
+      } else if (i >= 0) list.splice(i, 1);
+      await Store.set('favs', list);
+      if (!on) await gcFile(meta.id);
+      await loadFavIds();
+      return true;
+    } catch (e) {
+      showMsg('Favoritos não atualizados', 'Não foi possível ' + (on ? 'favoritar' : 'tirar dos favoritos') + ': ' + esc(e.message || e) + '.');
+      return false;
+    }
+  }
+  async function toggleFavCurrent() {
+    if (!S.score) return;
+    const id = curFileId();
+    if (!id) { toast('Salve a música no app (Ctrl+S) para poder favoritar'); return; }
+    const on = !isFav(id), sc = S.score;
+    const rec = (await getRecent()).find(x => x.id === id);
+    const meta = { id, name: (rec && rec.name) || S.srcName || ((S.fileName || sc.title || 'musica') + '.gp'), title: sc.title, artist: sc.artist, size: S.curBytes.length, settings: (rec && rec.settings) || (S.recId === id ? S.repBase : null) };
+    if (await setFav(meta, on, on ? S.curBytes : null)) toast(on ? 'Adicionada aos favoritos' : 'Tirada dos favoritos', on ? 'ok' : '');
+  }
+  // ao salvar uma versão nova, a estrela acompanha a música aberta
+  async function favFollow(oldId, bytes, name) {
+    if (!oldId || !isFav(oldId)) return;
+    const id = hashBytes(bytes); if (id === oldId) return;
+    try {
+      const list = await getFavs(), e = list.find(x => x.id === oldId); if (!e) return;
+      Object.assign(e, { id, name, size: bytes.length, title: (S.score && S.score.title) || e.title, artist: (S.score && S.score.artist) || e.artist, time: Date.now() });
+      if (S.recId === id && S.repBase) e.settings = cleanSt(S.repBase);
+      await Store.set('file:' + id, bytes);
+      await Store.set('favs', list.filter((x, i) => x.id !== id || x === e));
+      await gcFile(oldId); await loadFavIds();
+    } catch (e) { /* segue: a versão antiga continua nos favoritos */ }
+  }
+  async function openFav(id) {
+    const f = (await getFavs()).find(x => x.id === id); if (!f) return;
+    if (!(await confirmLeave())) return;
+    let bytes = null; try { bytes = await Store.get('file:' + id); } catch (e) { bytes = null; }
+    if (!bytes) { toast('Esse arquivo não está mais guardado no aparelho', 'err'); return; }
+    await openAsRecent(bytes, f.name);
+  }
+  function updateFavBtn() {
+    const b = $('btnFav'); if (!b) return;
+    const id = S.score ? curFileId() : null, on = isFav(id);
+    b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    b.title = !id ? 'Favoritar (salve a música no app primeiro)' : on ? 'Tirar dos favoritos' : 'Favoritar esta música';
+  }
   const cleanSt = st => { const c = JSON.parse(JSON.stringify(st)); c.loop = null; c.prog = null; return c; };
   async function saveRecentSettings(id, st) {
     try {
@@ -344,6 +410,7 @@
       if (!m) throw new Error('a música não está mais nos recentes');
       m.settings = cleanSt(st);
       await Store.set('recent', list);
+      if (isFav(id)) { const fl = await getFavs(), f = fl.find(x => x.id === id); if (f) { f.settings = cleanSt(st); await Store.set('favs', fl); } }
       return true;
     } catch (e) {
       showMsg('Ajustes não guardados', 'Os ajustes <b>não</b> foram guardados: ' + esc(e.message || e) + '. A música continua aberta com eles; tente aplicar de novo.');
@@ -354,8 +421,8 @@
   let recSeq = 0;
   async function openAsRecent(bytes, name, extra) {
     const id = hashBytes(bytes);
-    const meta = (await getRecent()).find(x => x.id === id);
-    const st = (meta && meta.settings) || null;
+    const meta = (await getRecent()).find(x => x.id === id), fav = (await getFavs()).find(x => x.id === id);
+    const st = (meta && meta.settings) || (fav && fav.settings) || null;
     const metro0 = $('btnMetro').classList.contains('on'), count0 = $('btnCountIn').classList.contains('on');
     const opts = Object.assign({}, extra || {}, { recId: id }, st ? { tracks: st.tracks, primary: st.primary, mix: st.mix } : {});
     if (!loadBytes(bytes, name, opts)) return false;
@@ -395,8 +462,9 @@
   async function gcFile(id) {
     if (!id) return;
     const inRecent = (await getRecent()).some(x => x.id === id);
+    const inFav = (await getFavs()).some(x => x.id === id);
     const inRep = Rep ? await Rep.usesFile(id) : true; // na dúvida, não apaga
-    if (!inRecent && !inRep) await Store.del('file:' + id);
+    if (!inRecent && !inFav && !inRep) await Store.del('file:' + id);
   }
   async function updateRecentButton() { const n = (await getRecent()).length; $('wRecent').innerHTML = icon('clock') + '<span>Recentes' + (n ? ' (' + n + ')' : '') + '</span>'; }
   function fmtSize(n) { return n < 1024 ? n + ' B' : (n / 1024).toFixed(n < 10240 ? 1 : 0).replace('.', ',') + ' KB'; }
@@ -418,7 +486,8 @@
 
   function updateTitle() {
     const s = S.score;
-    if (!s) { $('songTitle').textContent = '—'; return; }
+    document.body.classList.toggle('no-song', !s);
+    if (!s) { $('songTitle').textContent = ''; return; }
     // nome da música em cima (negrito) e da banda embaixo, menor — cabem mais letras na mesma altura
     $('songTitle').innerHTML = '<b>' + (S.dirty ? '● ' : '') + esc(s.title || S.fileName || 'Sem título') + '</b>' + (s.artist ? '<span>' + esc(s.artist) + '</span>' : '');
     document.title = (S.dirty ? '● ' : '') + (s.title || S.fileName || 'Tab Studio') + ' · Tab Studio';
@@ -1150,7 +1219,9 @@
       return false;
     }
     S.dirty = false; updateTitle(); clearDraft();
+    const oldId = curFileId();
     S.curBytes = r.data; S.srcName = name; S.origId = null;
+    await favFollow(oldId, r.data, name);
     if (!S.rep) { S.recId = hashBytes(r.data); if (carry) S.repBase = JSON.parse(JSON.stringify(carry)); }
     if (Rep) Rep.onSaved(r.data);
     toast('Salvo no app: ' + name + ' (' + r.notes + ' notas, ' + r.bars + ' compassos)' + (S.rep ? ' — repertório atualizado' : '') + '. O arquivo de origem não foi alterado; para ter o arquivo, use "Salvar como" ou "Baixar".', 'ok', 6500);
@@ -1178,6 +1249,8 @@
     }
     await keepOriginal();
     S.dirty = false; updateTitle(); clearDraft();
+    const oldId = curFileId();
+    await favFollow(oldId, r.data, shownName.replace(/\.zip$/i, ''));
     S.curBytes = r.data; S.srcName = shownName.replace(/\.zip$/i, ''); S.fileName = S.srcName.replace(/\.gp$/i, ''); S.origId = null;
     S.chg = { key: 0, edited: false };
     const carry = S.rep ? undefined : (S.recId ? S.repBase : (captureSettings() || undefined));
@@ -1850,17 +1923,76 @@
       const d = $('dlgApply');
       $('apTitle').textContent = mode === 'leave' ? 'Aplicar as alterações antes de trocar?' : 'Aplicar alterações';
       $('apSub').innerHTML = '<b>' + esc((S.score && (S.score.title || S.fileName)) || '') + '</b>' + (S.rep ? ' · repertório' : '') + (mode === 'leave' ? '<br>O que não for aplicado será descartado.' : '<br>Desmarque o que não quiser guardar.');
-      $('apList').innerHTML = items.map((it, i) => '<li><label class="ap-chk"><input type="checkbox" data-i="' + i + '" checked><span><b>' + esc(it.label) + '</b><i>' + (it.from != null ? esc(it.from) + ' → ' : '') + esc(it.to) + '</i></span></label></li>').join('');
-      const btns = mode === 'leave' ? [['cancel', 'Cancelar', ''], ['discard', 'Descartar', 'danger'], ['apply', 'Aplicar', 'primary']] : [['cancel', 'Cancelar', ''], ['apply', 'Aplicar', 'primary']];
-      $('apMenu').innerHTML = btns.map(([v, l, c]) => '<button type="button" class="btn ' + c + '" data-v="' + v + '">' + l + '</button>').join('');
+      $('apList').innerHTML = items.map((it, i) => '<li data-i="' + i + '"><label class="ap-chk"><input type="checkbox" data-i="' + i + '" checked><span><b>' + esc(it.label) + '</b><i>' + (it.from != null ? esc(it.from) + ' → ' : '') + esc(it.to) + '</i></span></label><button type="button" class="ap-x" title="Desfazer esta alteração (volta como estava)" aria-label="Desfazer">' + icon('close') + '</button></li>').join('');
+      const btns = mode === 'leave' ? [['cancel', 'Cancelar', ''], ['discard', 'Descartar', 'danger'], ['apply', 'Aplicar', 'primary']] : [['undoAll', 'Remover tudo', 'danger left'], ['cancel', 'Cancelar', ''], ['apply', 'Aplicar', 'primary']];
+      $('apMenu').innerHTML = btns.map(([v, l, c]) => '<button type="button" class="btn ' + c + '" data-v="' + v + '">' + (v === 'undoAll' ? icon('trash') : '') + l + '</button>').join('');
       let fin = false;
       const done = v => { if (fin) return; fin = true; const sel = [...d.querySelectorAll('#apList input')].filter(x => x.checked).map(x => items[+x.dataset.i]); d.close(); res({ v, sel }); };
-      $('apMenu').onclick = e => { const b = e.target.closest('button'); if (b && !b.disabled) done(b.dataset.v); };
+      $('apList').onclick = async e => {
+        const x = e.target.closest('.ap-x'); if (!x || x.disabled) return;
+        const li = x.closest('li'); x.disabled = true;
+        await revertChange(items[+li.dataset.i]);
+        li.remove();
+        if (!d.querySelector('#apList li')) done(mode === 'leave' ? 'discard' : 'cancel');   // nada mais pendente
+        else $('apList').onchange();
+      };
+      $('apMenu').onclick = async e => {
+        const b = e.target.closest('button'); if (!b || b.disabled) return;
+        if (b.dataset.v === 'undoAll') {
+          b.disabled = true;
+          for (const li of [...d.querySelectorAll('#apList li')]) await revertChange(items[+li.dataset.i]);
+          done('cancel'); toast('Alterações removidas: a música voltou como estava');
+          return;
+        }
+        done(b.dataset.v);
+      };
       $('apList').onchange = () => { $('apMenu').querySelector('[data-v="apply"]').disabled = ![...d.querySelectorAll('#apList input')].some(x => x.checked); };
       d.oncancel = e => { e.preventDefault(); done('cancel'); };
       d.onclose = () => done('cancel');
       d.showModal();
     });
+  }
+  /** desfaz uma alteração pendente: volta ao que está aplicado (a linha some da lista) */
+  async function revertChange(it) {
+    const b = S.repBase || {};
+    try {
+      if (it.id === 'speed') { const v = b.speed || 100; if (S.loopProg) S.speedBeforeLoop = v / 100; else setSpeed(v); }
+      else if (it.id === 'tracks') {
+        const ok = i => Number.isInteger(i) && S.score && i >= 0 && i < S.score.tracks.length;
+        const ts = (b.tracks || []).filter(ok); if (!ts.length) return;
+        if (S.edit && S.viewTracksBeforeEdit) S.viewTracksBeforeEdit = ts.slice();
+        else S.tracks = ts.slice();
+        S.primary = ok(b.primary) && ts.includes(b.primary) ? b.primary : ts[0];
+        if (S.edit) setEditTrack(S.primary); else { render(); refreshTrackUI(); }
+      }
+      else if (it.id === 'metro') setMetro(!!b.metro);
+      else if (it.id === 'countIn') setCountIn(!!b.countIn);
+      else if (it.id.startsWith('mix:')) {
+        const k = +it.id.slice(4), m = (b.mix || {})[k], t = S.score && S.score.tracks[k];
+        S.mix[k] = m ? { mute: !!m.mute, solo: !!m.solo, vol: m.vol == null ? 1 : m.vol } : { mute: false, solo: false, vol: 1 };
+        if (t) { api.changeTrackMute([t], S.mix[k].mute); api.changeTrackSolo([t], S.mix[k].solo); api.changeTrackVolume([t], S.mix[k].vol); }
+        refreshTrackUI();
+      }
+      else if (it.id === 'test') endKeyTest();
+      else if (it.id === 'score') revertScore();
+    } catch (e) { console.error(e); toast('Não foi possível desfazer: ' + (e.message || e), 'err'); }
+    updateDisk();
+  }
+  // a música volta a ser o arquivo guardado (ou, se é nova, desfaz tudo o que foi feito)
+  function revertScore() {
+    if (S.test) endKeyTest();
+    if (S.curBytes) {
+      const sc = at.importer.ScoreLoader.loadScoreFromBytes(S.curBytes, api.settings);
+      swapScore(sc);
+    } else {
+      while (S.undo.length) { S.score = Ops.restore(S.undo.pop(), api.settings); S.chg = S.undoChg.pop() || S.chg; }
+      swapScore(S.score);
+      if (S.chg.key || S.chg.edited) { toast('Parte das edições é antiga demais para desfazer', 'err'); return; }
+    }
+    S.undo = []; S.redo = []; S.undoChg = []; S.redoChg = [];
+    S.chg = { key: 0, edited: false }; S.dirty = false; clearDraft();
+    if (S.edit) updateEditor();
+    updateTitle(); renderKeyUI();
   }
   async function applySelected(sel, all) {
     const ids = sel.filter(x => !x.score).map(x => x.id);
@@ -1897,11 +2029,14 @@
     return true;
   }
   function updateDisk() {
+    document.body.classList.toggle('no-song', !S.score);   // sem música: some o que não tem uso
+    updateFavBtn();
     const n = S.score ? pendingChanges().length : 0, b = $('btnApply');
     b.classList.toggle('on', n > 0); $('applyN').textContent = n ? String(n) : '';
     b.title = n ? (n === 1 ? '1 alteração para aplicar' : n + ' alterações para aplicar') : 'Nada para aplicar';
   }
   setInterval(updateDisk, 1000);
+  updateDisk();
   $('btnApply').onclick = async () => {
     const items = pendingChanges();
     if (!items.length) { toast('Nada para aplicar'); return; }
@@ -1917,6 +2052,9 @@
   $('wNew').onclick = newSongDialog;
   $('wDemo').onclick = openDemo;
   $('wRecent').onclick = recentDialog;
+  $('wFavs').onclick = () => Rep.openLibrary('favs');
+  $('btnFav').onclick = toggleFavCurrent;
+  loadFavIds();
   updateRecentButton();
   $('edClose').onclick = () => toggleEdit(false);
   // botão Trilhas do topo: abre/fecha a barra de trilhas e fica aceso quando aberta
@@ -1938,7 +2076,7 @@
     const b = e.target.closest('[data-act]'); if (!b) return;
     const act = b.dataset.act;
     closePopups();
-    ({ open: () => $('fileInput').click(), recent: recentDialog, reps: () => Rep.openLibrary('reps'), edit: () => toggleEdit(), new: newSongDialog, save: () => saveGp(), saveAs: () => saveAsFile(), download: () => downloadFile(), midi: exportMidi, print: printScore, demo: openDemo, info: infoDialog, shortcuts: shortcutsDialog, about: aboutDialog })[act]();
+    ({ open: () => $('fileInput').click(), recent: recentDialog, reps: () => Rep.openLibrary('reps'), favs: () => Rep.openLibrary('favs'), edit: () => toggleEdit(), new: newSongDialog, save: () => saveGp(), saveAs: () => saveAsFile(), download: () => downloadFile(), midi: exportMidi, print: printScore, demo: openDemo, info: infoDialog, shortcuts: shortcutsDialog, about: aboutDialog })[act]();
   };
 
   /* arrastar e soltar */
@@ -1975,6 +2113,7 @@
   Rep = window.makeRepertoire({
     S, api, Store, $, esc, icon, toast, showMsg, confirmDlg, fmtSize, FRAMED, Wake,
     getRecent, openRecent, removeRecent, clearRecent, updateRecentButton, gcFile, hashBytes,
+    getFavs, isFav, setFav, openFav,
     loadBytes, parseScore, currentBytes, captureSettings, applyPlaySettings, afterMidi, setCountIn,
     zipStore, deliverZip, fileNotDelivered, clearDraft, addRecent, confirmLeave, updateDisk,
     openFilePicker: () => $('fileInput').click(), newSong: () => newSongDialog()

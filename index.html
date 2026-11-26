@@ -13,7 +13,7 @@
 <link rel="stylesheet" href="css/app.css">
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.js" } }</script>
 </head>
-<body>
+<body class="no-song">
 <svg xmlns="http://www.w3.org/2000/svg" style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
   <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 17.2V20h2.8l9.4-9.4-2.8-2.8zM18.7 8.1a1 1 0 000-1.4l-1.4-1.4a1 1 0 00-1.4 0l-1.2 1.2 2.8 2.8z"/></symbol>
   <symbol id="i-guitar" viewBox="0 0 24 24"><path d="M20.6 3.4l-2.1-.1-.1 1-3.9 3.9a4.7 4.7 0 00-3.1.6c-.9.5-1.3 1.6-2 2.3-.7.7-2.4.4-3.6 1.6-1.7 1.7-1.4 4.7.6 6.7s5 2.3 6.7.6c1.2-1.2.9-2.9 1.6-3.6.7-.7 1.8-1.1 2.3-2 .5-1 .7-2.1.6-3.1l3.9-3.9 1-.1-.1-2.1zM9.2 16.3a1.5 1.5 0 110-2.1 1.5 1.5 0 010 2.1z"/></symbol>
@@ -37,6 +37,7 @@
   <symbol id="i-close" viewBox="0 0 24 24"><path d="M6.4 5L12 10.6 17.6 5 19 6.4 13.4 12l5.6 5.6-1.4 1.4-5.6-5.6L6.4 19 5 17.6 10.6 12 5 6.4z"/></symbol>
   <symbol id="i-chev" viewBox="0 0 24 24"><path d="M7 9.5l5 5 5-5z"/></symbol>
   <symbol id="i-chevr" viewBox="0 0 24 24"><path d="M9.5 7l5 5-5 5z"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 2.6l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.4l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="M9.5 16.2L5.3 12l-1.4 1.4 5.6 5.6L20.1 8.4 18.7 7z"/></symbol>
   <symbol id="i-flip" viewBox="0 0 24 24"><path d="M7 4l-4 4 4 4V9h10V7H7zm10 8v3H7v2h10v3l4-4z"/></symbol>
   <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 5h7l2 2h9v12H3z"/></symbol>
@@ -73,7 +74,7 @@
   <!-- Barra superior -->
   <header id="topbar">
     <div class="brand" title="Tab Studio"><div class="logo"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="#fff" opacity=".5" d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/><circle cx="9" cy="7" r="2.6" fill="#FF9901"/><circle cx="15" cy="12" r="2.6" fill="#fff"/><circle cx="7" cy="17" r="2.6" fill="#99CC33"/></svg></div><span>Tab Studio</span></div>
-    <div class="song-title" id="songTitle">—</div>
+    <div class="song-title" id="songTitle"></div>
     <nav class="tb-group">
       <button class="tb" id="btnLib" title="Músicas: abrir, recentes e repertórios"><i><svg class="i" aria-hidden="true"><use href="#i-lib"/></svg></i><span>Músicas</span></button>
       <button class="tb toggle" id="btnTrkPanel" title="Mostrar / esconder as trilhas (compassos de cada instrumento)"><i><svg class="i" aria-hidden="true"><use href="#i-rows"/></svg></i><span>Trilhas</span></button>
@@ -83,6 +84,7 @@
       <button class="tb" id="btnTrkUp" title="Instrumento anterior (trilha de cima)"><i><svg class="i" aria-hidden="true"><use href="#i-up"/></svg></i><span>Anterior</span></button>
       <button class="tb" id="btnTrkDown" title="Próximo instrumento (trilha de baixo)"><i><svg class="i" aria-hidden="true"><use href="#i-down"/></svg></i><span>Próximo</span></button>
     </nav>
+    <button class="tb round fav-btn" id="btnFav" title="Favoritar esta música" aria-label="Favoritar" aria-pressed="false"><svg class="i" aria-hidden="true"><use href="#i-star"/></svg></button>
     <button class="tb round" id="btnTheme" title="Modo claro / escuro" aria-label="Modo claro / escuro"><svg class="i" aria-hidden="true"><use href="#i-moon"/></svg></button>
     <button class="tb burger" id="btnMore" title="Menu" aria-label="Menu" aria-haspopup="true"><svg class="i" aria-hidden="true"><use href="#i-menu"/></svg></button>
     <input type="file" id="fileInput" accept=".gp,.gp3,.gp4,.gp5,.gpx,.musicxml,.mxl,.xml,.capx,.tex,.txt,.zip,.tabrep" hidden>
@@ -96,6 +98,7 @@
     <button data-act="new"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg><span>Nova música</span></button>
     <button data-act="save"><svg class="i" aria-hidden="true"><use href="#i-save"/></svg><span>Salvar no app</span><kbd>Ctrl+S</kbd></button>
     <button data-act="reps"><svg class="i" aria-hidden="true"><use href="#i-rep"/></svg><span>Repertórios</span></button>
+    <button data-act="favs"><svg class="i" aria-hidden="true"><use href="#i-star"/></svg><span>Favoritos</span></button>
     <button data-act="edit" id="btnEdit"><svg class="i" aria-hidden="true"><use href="#i-edit"/></svg><span>Modo edição</span><kbd>E</kbd></button>
     <hr>
     <button data-act="saveAs"><svg class="i" aria-hidden="true"><use href="#i-saveas"/></svg><span>Salvar como arquivo…</span><kbd>Ctrl+Shift+S</kbd></button>
@@ -160,10 +163,11 @@
           <p>Abra tablaturas do Guitar Pro (GP3, GP4, GP5, GPX, GP7/8) ou MusicXML, toque, edite, componha e imprima — tudo no navegador, funcionando offline.</p>
           <div class="welcome-actions">
             <button class="btn big primary" id="wOpen"><svg class="i" aria-hidden="true"><use href="#i-folder"/></svg>Abrir arquivo</button>
-            <button class="btn big" id="wNew"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg>Nova música</button>
             <button class="btn big" id="wRecent"><svg class="i" aria-hidden="true"><use href="#i-clock"/></svg><span>Recentes</span></button>
             <button class="btn big" id="wReps"><svg class="i" aria-hidden="true"><use href="#i-rep"/></svg><span>Repertórios</span></button>
+            <button class="btn big" id="wFavs"><svg class="i" aria-hidden="true"><use href="#i-star"/></svg><span>Favoritos</span></button>
             <button class="btn big" id="wDemo"><svg class="i" aria-hidden="true"><use href="#i-note"/></svg>Exemplo</button>
+            <button class="btn big" id="wNew"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg>Nova música</button>
           </div>
           <div id="draftBox" hidden></div>
           <p class="hint">Dica: arraste um arquivo para esta janela.</p>
@@ -385,6 +389,7 @@
     <div class="lib-tabs seg" id="libTabs" role="tablist">
       <button type="button" data-tab="recent"><svg class="i" aria-hidden="true"><use href="#i-clock"/></svg><span>Recentes</span></button>
       <button type="button" data-tab="reps"><svg class="i" aria-hidden="true"><use href="#i-rep"/></svg><span>Repertórios</span></button>
+      <button type="button" data-tab="favs"><svg class="i" aria-hidden="true"><use href="#i-star"/></svg><span>Favoritos</span></button>
     </div>
     <div class="lib-body" id="libBody"></div>
     <div class="lib-foot" id="libFoot"></div>
