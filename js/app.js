@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '2.3.1';
+  const APP_VERSION = '2.3.2';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Tr = window.makeTranspose(at);   // tom do conjunto (js/transpose.js)
@@ -154,6 +154,12 @@
     opts = opts || {};
     if (Rep) Rep.leaving(); // guarda os ajustes da música do repertório que está saindo
     S.rep = opts.rep || null; S.repPending = !!opts.rep; S.curBytes = null; S.test = null;
+    // cada música começa "do zero": sem trecho, sem repetição, sem aumento automático e a 100%
+    // (no repertório, a velocidade escolhida para a música é aplicada depois)
+    api.isLooping = false; S.loopProg = null; S.speedBeforeLoop = null;
+    try { api.playbackRange = null; api.clearPlaybackRangeHighlight(); } catch (e) { /* nada destacado */ }
+    if (typeof setLoopPick === 'function') setLoopPick(null);
+    setSpeed(100);
     S.score = score;
     S.fileName = opts.name || score.title || 'musica';
     S.saveHandle = opts.saveHandle || null;
@@ -172,6 +178,7 @@
     Ops.clampCursor(score, S.cur);
     S.cur.string = Ops.stringCount(score, S.cur);
     S.primary = prim; S.threeTrack = S.primary;
+    tbar.setRange(null); updateLoopStatus();
     $('welcome').hidden = true;
     viewport.scrollTop = 0; viewport.scrollLeft = 0;
     if (S.edit) { S.viewTracksBeforeEdit = null; S.tracks = [S.cur.track]; }
@@ -1557,9 +1564,9 @@
 
   /* ---------------- ajustes da música (para o repertório) ---------------- */
   // tudo o que o músico ajustou: velocidade, trecho/repetição, trilhas, metrônomo, contagem e mixer
+  // trecho, repetição e o aumento automático de velocidade são treino do momento: NUNCA são guardados
   function captureSettings() {
     if (!S.score || S.repPending || !api.tickCache) return null;
-    const r = rangeBars(api.playbackRange);
     const view = (S.edit && S.viewTracksBeforeEdit) ? S.viewTracksBeforeEdit : S.tracks;
     const t = S.score.tracks[S.primary];
     const base = (S.loopProg && S.speedBeforeLoop != null) ? S.speedBeforeLoop : api.playbackSpeed;
@@ -1567,8 +1574,7 @@
     for (const k of Object.keys(S.mix)) { const m = S.mix[k]; if (m && (m.mute || m.solo || Math.abs(m.vol - 1) > 0.001)) mix[k] = { mute: !!m.mute, solo: !!m.solo, vol: Math.round(m.vol * 100) / 100 }; }
     return {
       speed: Math.round(base * 100),
-      loop: r ? { a: r[0], b: r[1], on: !!api.isLooping } : null,
-      prog: S.loopProg ? { from: S.loopProg.from, to: S.loopProg.to, step: S.loopProg.step } : null,
+      loop: null, prog: null,
       tracks: view.slice(), primary: S.primary, trackName: t ? (t.name || '').trim() : '',
       metro: $('btnMetro').classList.contains('on'), countIn: $('btnCountIn').classList.contains('on'),
       mix
@@ -1583,18 +1589,8 @@
     api.isLooping = false;
     try { api.playbackRange = null; api.clearPlaybackRangeHighlight(); } catch (e) { /* nada destacado */ }
     tbar.setRange(null);
-    const n = S.score ? S.score.masterBars.length : 0;
-    if (st.loop && st.loop.a >= 0 && st.loop.b >= st.loop.a && st.loop.b < n && api.tickCache) {
-      try { setRangeBars(st.loop.a, st.loop.b, true); } catch (e) { /* trecho inválido: ignora */ }
-      api.isLooping = !!st.loop.on;
-      if (st.prog && st.loop.on) {
-        S.speedBeforeLoop = (st.speed || 100) / 100;
-        S.loopProg = { from: st.prog.from, to: st.prog.to, step: st.prog.step, cycle: 0 };
-        $('lpProg').checked = true; $('lpFrom').value = st.prog.from; $('lpTo').value = st.prog.to; $('lpStep').value = st.prog.step;
-        setSpeed(st.prog.from);
-      }
-    }
-    try { api.tickPosition = api.playbackRange ? api.playbackRange.startTick : 0; } catch (e) { /* sem MIDI */ }
+    // trecho/repetição guardados por versões antigas são ignorados: a música sempre começa sem repetição
+    try { api.tickPosition = 0; } catch (e) { /* sem MIDI */ }
     S.repPending = false;
     updateLoopStatus();
   }

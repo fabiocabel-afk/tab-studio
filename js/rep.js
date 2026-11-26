@@ -1,4 +1,4 @@
-/* Tab Studio — repertórios: listas de músicas com os ajustes de cada uma (velocidade, trecho,
+/* Tab Studio — repertórios: listas de músicas com os ajustes de cada uma (velocidade,
    trilhas, metrônomo, contagem e mixer), tocadas em sequência, exportadas e importadas pela banda.
    Os arquivos ficam guardados uma vez só no aparelho ('file:<id>') e são compartilhados com os recentes. */
 (function (root) {
@@ -74,8 +74,7 @@
       if (!st || typeof st !== 'object') return null;
       const int = (v, a, b) => Number.isFinite(+v) ? Math.max(a, Math.min(b, Math.round(+v))) : null;
       const o = { speed: int(st.speed, 10, 300) || 100, loop: null, prog: null, tracks: [], primary: int(st.primary, 0, 999), trackName: str(st.trackName).slice(0, 80), metro: !!st.metro, countIn: !!st.countIn, mix: {} };
-      if (st.loop && typeof st.loop === 'object') { const a = int(st.loop.a, 0, 9999), b = int(st.loop.b, 0, 9999); if (a != null && b != null && b >= a) o.loop = { a, b, on: !!st.loop.on }; }
-      if (st.prog && typeof st.prog === 'object') o.prog = { from: int(st.prog.from, 10, 300) || 50, to: int(st.prog.to, 10, 300) || 100, step: int(st.prog.step, 1, 100) || 5 };
+      // trecho e repetição não vêm junto (são treino do momento)
       if (Array.isArray(st.tracks)) o.tracks = st.tracks.map(x => int(x, 0, 999)).filter(x => x != null).slice(0, 64);
       if (st.mix && typeof st.mix === 'object') for (const k of Object.keys(st.mix).slice(0, 64)) { const m = st.mix[k]; if (m && int(k, 0, 999) != null) o.mix[int(k, 0, 999)] = { mute: !!m.mute, solo: !!m.solo, vol: Math.max(0, Math.min(1.5, +m.vol || 0)) }; }
       return o;
@@ -244,7 +243,7 @@
     }
     function addCurrent() {
       if (!S.score) { toast('Abra uma música primeiro'); return; }
-      pickRep('"' + (S.score.title || S.fileName) + '" vai com os ajustes de agora: velocidade, trecho, trilhas, metrônomo, contagem e mixer.', itemFromCurrent);
+      pickRep('"' + (S.score.title || S.fileName) + '" vai com os ajustes de agora: velocidade, trilhas, metrônomo, contagem e mixer (o trecho em repetição não vai: é treino do momento).', itemFromCurrent);
     }
     function extOf(b) {
       const head = String.fromCharCode.apply(null, b.subarray(0, 32));
@@ -334,7 +333,6 @@
       if (!st) return '';
       const c = [];
       if (st.speed && st.speed !== 100) c.push(st.speed + '%');
-      if (st.loop) c.push((st.loop.on ? 'repete ' : 'trecho ') + (st.loop.a + 1) + '–' + (st.loop.b + 1));
       if (st.trackName) c.push(st.trackName);
       if (st.metro) c.push('metrônomo');
       if (st.countIn) c.push('contagem');
