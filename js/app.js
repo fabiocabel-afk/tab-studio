@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '2.7.1';
+  const APP_VERSION = '2.8.0';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Tr = window.makeTranspose(at);   // tom do conjunto (js/transpose.js)
@@ -746,7 +746,7 @@
     if (!S.score) { toast('Abra uma música primeiro'); return; }
     const p = $('loopPanel'); p.hidden = false;
     // fica logo acima da barra de trilhas e do player, qualquer que seja a altura deles
-    p.style.bottom = ($('player').offsetHeight + $('trackBar').offsetHeight + 8) + 'px';
+    p.style.bottom = (document.body.classList.contains('inst-fs') ? ($('fsStrip').offsetHeight + $('fsCtl').offsetHeight + 20) : ($('player').offsetHeight + $('trackBar').offsetHeight + 8)) + 'px';
     const n = S.score.masterBars.length;
     if (tbar.range) { $('lpStart').value = tbar.range[0] + 1; $('lpEnd').value = tbar.range[1] + 1; }
     else { const a = (S.edit ? S.cur.bar : tbar.cur) + 1; $('lpStart').value = a; $('lpEnd').value = Math.min(n, a + 3); }
@@ -1730,7 +1730,7 @@
     S.cur.string = string;
     edSetFret(fret);
   }
-  document.querySelector('[data-close3d]').onclick = () => toggle3d(false);
+  document.querySelector('[data-close3d]').onclick = () => { if (window.TabStudio && TabStudio.fullView.active) TabStudio.fullView.exit(); toggle3d(false); };
 
   /* ---------------- visualização ---------------- */
   prefs.stave = staveOf(prefs.stave);
@@ -2201,6 +2201,9 @@
   const Backup = window.makeBackup({ S, Store, $, esc, toast, showMsg, APP_VERSION, FRAMED, Rep, zipBlob, deliverZip, fileNotDelivered, fmtSize, hashBytes,
     getRecent, getFavs, getKept, putKept, cleanSt, loadFavIds, updateRecentButton, RECENT_MAX });
   window.TabBackup = Backup;
+  if (prefs.fsStrip === undefined) prefs.fsStrip = true;
+  const FullView = window.makeFullView({ S, api, at, $, prefs, savePrefs, toast, icon, FRAMED, findAt, msPerTick, scheduleIdle, stepNote, setSpeed, toggle3d, paintRange, fmtTime,
+    staveNow: () => STAVES[effStave()], fontDir: settings.core.fontDirectory, scriptFile: settings.core.scriptFile, scoreGen: () => 0 });
 
   /* ---------------- botão "voltar" do celular ----------------
      Mantém uma entrada extra no histórico: cada "voltar" fecha a camada de cima
@@ -2218,6 +2221,8 @@
         if (d.id === 'dlgLib' && Rep.back()) return true;
         d.close('cancel'); return true;
       }
+      if (!$('loopPanel').hidden && FullView.active) { $('btnLoop').click(); return true; }
+      if (FullView.active) { FullView.exit(); return true; }
       if (!$('tracksPanel').hidden) { $('tracksPanel').hidden = true; $('btnTracks').classList.remove('on'); return true; }
       if (S.edit) { toggleEdit(false); return true; }
       if (!$('panel3d').hidden) { toggle3d(false); return true; }
@@ -2251,7 +2256,7 @@
   checkDraft();
 
   // ganchos para testes automatizados
-  window.TabStudio = { backup: Backup,
+  window.TabStudio = { backup: Backup, fullView: FullView,
     version: APP_VERSION, api, Ops, state: S,
     loadBytes, setScore, getRecent, saveAsFile, downloadFile, rep: Rep, captureSettings, gcFile, openRecent, recentDialog, selectTrack, setVizMode, openLoopPanel, applyLoop, loopOff, setSpeed, seekToBar, setRangeBars, tbar, Wake: window.TabWake, zipStore, exportMidi, buildDemo, openDemo, toggleEdit, toggle3d, edAction, edSetFret, saveGp, undo, redo, commit, drawCursor, updateDisk, pendingChanges, stepNote, beatsAtTick
   };

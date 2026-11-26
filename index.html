@@ -41,6 +41,10 @@
   <symbol id="i-backup" viewBox="0 0 24 24"><path d="M19.4 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A6 6 0 0 0 6 20h13a5 5 0 0 0 .4-9.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></symbol>
   <symbol id="i-restore" viewBox="0 0 24 24"><path d="M19.4 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A6 6 0 0 0 6 20h13a5 5 0 0 0 .4-9.96zM17 13l-5 5-5-5h3V9h4v4h3z"/></symbol>
   <symbol id="i-search" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></symbol>
+  <symbol id="i-expand" viewBox="0 0 24 24"><path d="M4 4h6v2H6v4H4V4zm10 0h6v6h-2V6h-4V4zM4 14h2v4h4v2H4v-6zm14 0h2v6h-6v-2h4v-4z"/></symbol>
+  <symbol id="i-collapse" viewBox="0 0 24 24"><path d="M8 4h2v6H4V8h4V4zm6 0h2v4h4v2h-6V4zM4 14h6v6H8v-4H4v-2zm10 0h6v2h-4v4h-2v-6z"/></symbol>
+  <symbol id="i-ctl" viewBox="0 0 24 24"><path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z"/></symbol>
+  <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M16.48 2.52c3.27 1.55 5.61 4.72 5.97 8.48h1.5C23.44 4.84 18.29 0 12 0l-.66.03 3.81 3.81 1.33-1.32zM10.23 1.75a1.49 1.49 0 0 0-2.12 0L1.75 8.11a1.49 1.49 0 0 0 0 2.12l12.02 12.02c.59.59 1.54.59 2.12 0l6.36-6.36c.59-.59.59-1.54 0-2.12L10.23 1.75zm4.6 19.44L2.81 9.17l6.36-6.36 12.02 12.02-6.36 6.36zM7.52 21.48A10.5 10.5 0 0 1 1.55 13H.05C.56 19.16 5.71 24 12 24l.66-.03-3.81-3.81-1.33 1.32z"/></symbol>
   <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 2.6l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.4l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="M9.5 16.2L5.3 12l-1.4 1.4 5.6 5.6L20.1 8.4 18.7 7z"/></symbol>
   <symbol id="i-flip" viewBox="0 0 24 24"><path d="M7 4l-4 4 4 4V9h10V7H7zm10 8v3H7v2h10v3l4-4z"/></symbol>
@@ -198,6 +202,7 @@
             <option value="4" data-short="Prévia 4" data-tiny="P4">4 · Prévia: 3 compassos à frente</option>
           </select>
           <span class="p3d-msg" id="p3dMsg"></span>
+          <button class="x fs-btn" id="btnFull" title="Tela inteira (instrumento deitado, só ele na tela)"><svg class="i" aria-hidden="true"><use href="#i-expand"/></svg></button>
           <button class="x" data-close3d title="Fechar"><svg class="i" aria-hidden="true"><use href="#i-close"/></svg></button>
         </div>
         <div class="p3d-opts" id="p3dOpts" hidden>
@@ -214,6 +219,31 @@
           <canvas id="canvasK2d" data-mode="keys2d" hidden></canvas>
           <canvas id="canvasD3d" data-mode="drum3d" hidden></canvas>
           <canvas id="canvasD2d" data-mode="drum2d" hidden></canvas>
+        </div>
+        <!-- tela inteira: nome da música, trilha, controles escondidos e a faixa de uma linha -->
+        <div class="fs-top" id="fsTop">
+          <div class="fs-song"><b id="fsTitle"></b><span id="fsArtist"></span></div>
+          <div class="fs-trk"><button type="button" id="fsTrkUp" title="Trilha anterior"><svg class="i" aria-hidden="true"><use href="#i-up"/></svg></button><span id="fsTrk"></span><button type="button" id="fsTrkDown" title="Próxima trilha"><svg class="i" aria-hidden="true"><use href="#i-down"/></svg></button></div>
+        </div>
+        <button type="button" class="fs-toggle" id="fsToggle" title="Mostrar / esconder os controles" aria-pressed="false"><svg class="i" aria-hidden="true"><use href="#i-ctl"/></svg></button>
+        <div class="fs-rotate" id="fsRotate" hidden><svg class="i" aria-hidden="true"><use href="#i-rotate"/></svg>Gire o celular para ver deitado</div>
+        <div class="fs-ctl" id="fsCtl">
+          <div class="fs-grp">
+            <button type="button" id="fsBack" title="Nota anterior"><svg class="i" aria-hidden="true"><use href="#i-play-back"/></svg></button>
+            <button type="button" class="fs-main" id="fsPlay" title="Tocar / pausar"><svg class="i" aria-hidden="true"><use href="#i-play"/></svg></button>
+            <button type="button" id="fsFwd" title="Próxima nota"><svg class="i" aria-hidden="true"><use href="#i-play"/></svg></button>
+            <button type="button" class="fs-stop" id="fsStop" title="Parar"><svg class="i" aria-hidden="true"><use href="#i-stop"/></svg></button>
+          </div>
+          <div class="fs-time"><span id="fsCur">0:00</span><input type="range" id="fsSeek" min="0" max="1000" value="0" aria-label="Posição na música"><span id="fsEnd">0:00</span></div>
+          <div class="fs-grp">
+            <button type="button" id="fsSlower" title="Mais devagar">−</button><b class="fs-speed" id="fsSpeed">100%</b><button type="button" id="fsFaster" title="Mais rápido">+</button>
+            <button type="button" id="fsLoop" title="Repetir um trecho"><svg class="i" aria-hidden="true"><use href="#i-loop"/></svg></button>
+            <button type="button" id="fsStripTog" title="Mostrar / esconder a linha da partitura"><svg class="i" aria-hidden="true"><use href="#i-rows"/></svg></button>
+          </div>
+        </div>
+        <div class="fs-strip" id="fsStrip" hidden>
+          <div class="fs-strip-in" id="fsStripIn"><div id="fsScore"></div><div class="fs-beat" id="fsBeat" hidden></div></div>
+          <div class="fs-center"></div>
         </div>
       </section>
     </section>
@@ -437,6 +467,7 @@
 <script src="js/transpose.js"></script>
 <script src="js/rep.js"></script>
 <script src="js/backup.js"></script>
+<script src="js/fullview.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>
