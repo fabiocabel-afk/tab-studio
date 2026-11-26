@@ -306,7 +306,7 @@
       <button class="pb sq" id="rbNext" title="Próxima música do repertório"><svg class="i" aria-hidden="true"><use href="#i-next"/></svg></button>
       <button class="x" id="rbClose" title="Sair do repertório"><svg class="i" aria-hidden="true"><use href="#i-close"/></svg></button>
     </div>
-    <div class="pl-progress"><span class="pl-t" id="plCur" title="Tempo decorrido">0:00</span><input type="range" id="rngSeek" min="0" max="1000" value="0" aria-label="Posição na música"><span class="pl-t end" id="plEnd" title="Duração">0:00</span></div>
+    <div class="pl-progress"><button type="button" class="disk-btn" id="btnApply" title="Nada para aplicar"><svg class="i" aria-hidden="true"><use href="#i-save"/></svg><b class="dk-n" id="applyN"></b></button><span class="pl-t" id="plCur" title="Tempo decorrido">0:00</span><input type="range" id="rngSeek" min="0" max="1000" value="0" aria-label="Posição na música"><span class="pl-t end" id="plEnd" title="Duração">0:00</span></div>
     <div class="pl-row">
       <div class="pl-left"><span class="pl-status" id="plStatus"></span></div>
       <div class="pl-center">
@@ -393,6 +393,12 @@
     <div class="lib-head"><h3><svg class="i" aria-hidden="true"><use href="#i-repadd"/></svg><span>Adicionar ao repertório</span></h3><button type="button" class="x" id="pickClose" title="Fechar"><svg class="i" aria-hidden="true"><use href="#i-close"/></svg></button></div>
     <div class="muted pick-sub" id="pickSub"></div>
     <div class="rep-list" id="pickList"></div>
+  </dialog>
+  <dialog id="dlgApply" class="small apply-dlg">
+    <h3 id="apTitle">Aplicar alterações</h3>
+    <p class="muted" id="apSub"></p>
+    <ul class="ap-list" id="apList"></ul>
+    <menu id="apMenu"></menu>
   </dialog>
   <dialog id="dlgName" class="small">
     <form method="dialog">

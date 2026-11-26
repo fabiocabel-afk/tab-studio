@@ -36,8 +36,10 @@ svg.i { width: 20px; height: 20px; fill: currentColor; flex: none; display: bloc
 }
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 800; letter-spacing: .2px; order: 0; }
 .brand .logo { width: 34px; height: 34px; border-radius: 10px; background: var(--brand); display: grid; place-items: center; box-shadow: 0 4px 14px rgba(100,42,144,.4); }
-.song-title { order: 1; flex: 1; min-width: 120px; color: var(--tx2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; line-height: 1.25; }
-.song-title b { color: var(--tx); font-size: 15px; }
+.song-title { order: 1; flex: 1; min-width: 120px; display: flex; flex-direction: column; justify-content: center; gap: 1px; overflow: hidden; line-height: 1.15; }
+.song-title b, .song-title span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.song-title b { color: var(--tx); font-size: 15px; font-weight: 800; }
+.song-title span { color: var(--tx2); font-size: 12px; font-weight: 400; }
 .tb-group { order: 3; display: flex; gap: 6px; }
 .tb {
   display: flex; align-items: center; justify-content: center; gap: 6px; height: 40px; min-width: 44px; padding: 0 12px;
@@ -519,3 +521,18 @@ dialog.lib #recentList { min-width: 0; max-height: none; overflow: visible; }
 /* Mixer por cima da barra de trilhas (cobre também a área dela quando aberta) */
 #tracksPanel { position: relative; z-index: 21; margin-bottom: calc(-1 * var(--tbar-h, 0px)); }
 @media (max-width: 900px) { #tracksPanel { position: absolute; margin-bottom: 0; bottom: calc(-1 * var(--tbar-h, 0px)); } }
+
+/* disquete: alterações para aplicar (lado esquerdo do player) */
+.disk-btn { position: relative; flex: none; width: 32px; height: 32px; border: 0; border-radius: 9px; background: transparent; color: var(--tx2); opacity: .45; display: grid; place-items: center; cursor: pointer; padding: 0; margin-right: 4px; transition: opacity .2s, background .2s; }
+.disk-btn svg.i { width: 20px; height: 20px; }
+.disk-btn.on { opacity: 1; color: #fff; background: var(--brand); box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 35%, transparent); }
+.disk-btn .dk-n { position: absolute; top: -6px; right: -6px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px; background: var(--orange); color: #1a1020; font-size: 10.5px; font-weight: 800; line-height: 17px; text-align: center; }
+.disk-btn .dk-n:empty { display: none; }
+.apply-dlg { width: min(460px, 94vw); }
+.ap-list { list-style: none; margin: 8px 0 14px; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 50vh; overflow: auto; }
+.ap-chk { display: flex !important; flex-direction: row !important; align-items: flex-start; gap: 10px; margin: 0 !important; padding: 9px 10px; border-radius: 10px; background: var(--surf2); cursor: pointer; }
+.ap-chk input { accent-color: var(--brand); width: 18px; height: 18px; margin: 1px 0 0; flex: none; }
+.ap-chk span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ap-chk b { font-size: 14px; }
+.ap-chk i { font-style: normal; font-size: 12.5px; color: var(--tx2); }
+#apMenu { display: flex; gap: 8px; justify-content: flex-end; padding: 0; margin: 0; }

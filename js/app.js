@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '2.3.2';
+  const APP_VERSION = '2.4.0';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Tr = window.makeTranspose(at);   // tom do conjunto (js/transpose.js)
@@ -153,7 +153,7 @@
   function setScore(score, opts) {
     opts = opts || {};
     if (Rep) Rep.leaving(); // guarda os ajustes da música do repertório que está saindo
-    S.rep = opts.rep || null; S.repPending = !!opts.rep; S.curBytes = null; S.test = null;
+    S.rep = opts.rep || null; S.repPending = !!opts.rep; S.repBase = null; S.curBytes = null; S.test = null;
     // cada música começa "do zero": sem trecho, sem repetição, sem aumento automático e a 100%
     // (no repertório, a velocidade escolhida para a música é aplicada depois)
     api.isLooping = false; S.loopProg = null; S.speedBeforeLoop = null;
@@ -335,7 +335,7 @@
   }
   async function openRecent(id) {
     const list = await getRecent(); const meta = list.find(x => x.id === id); if (!meta) return;
-    if (S.dirty && !(await confirmDlg('Alterações não salvas', 'A música atual tem alterações que ainda não foram salvas. Abrir outro arquivo vai descartá-las.', 'Descartar e abrir'))) return;
+    if (!(await confirmLeave())) return;
     let bytes = null; try { bytes = await Store.get('file:' + id); } catch (e) { bytes = null; }
     if (!bytes) { toast('Esse arquivo não está mais guardado no aparelho — abra pelo "Abrir arquivo"', 'err'); await removeRecent(id); return; }
     if (loadBytes(bytes, meta.name)) { clearDraft(); addRecent(bytes, meta.name); }
@@ -367,7 +367,7 @@
       try { const b = new Uint8Array(await file.arrayBuffer()); if (await Rep.isRepZip(b)) { Rep.importBytes(b, file.name); return; } }
       catch (e) { showMsg('Erro ao ler arquivo', esc(e.message)); return; }
     }
-    if (S.dirty && !(await confirmDlg('Alterações não salvas', 'A música atual tem alterações que ainda não foram salvas. Abrir outro arquivo vai descartá-las (o rascunho automático também será substituído).', 'Descartar e abrir'))) return;
+    if (!(await confirmLeave())) return;
     try {
       const buf = await file.arrayBuffer();
       const bytes = new Uint8Array(buf);
@@ -379,7 +379,8 @@
   function updateTitle() {
     const s = S.score;
     if (!s) { $('songTitle').textContent = '—'; return; }
-    $('songTitle').innerHTML = (S.dirty ? '● ' : '') + '<b>' + esc(s.title || S.fileName || 'Sem título') + '</b>' + (s.artist ? ' — ' + esc(s.artist) : '');
+    // nome da música em cima (negrito) e da banda embaixo, menor — cabem mais letras na mesma altura
+    $('songTitle').innerHTML = '<b>' + (S.dirty ? '● ' : '') + esc(s.title || S.fileName || 'Sem título') + '</b>' + (s.artist ? '<span>' + esc(s.artist) + '</span>' : '');
     document.title = (S.dirty ? '● ' : '') + (s.title || S.fileName || 'Tab Studio') + ' · Tab Studio';
   }
 
@@ -1258,7 +1259,7 @@
     const d = $('dlgNew'); d.returnValue = '';
     d.onclose = async () => {
       if (d.returnValue !== 'ok') return;
-      if (S.dirty && !(await confirmDlg('Alterações não salvas', 'Criar uma nova música vai descartar as alterações não salvas da atual.', 'Descartar e criar'))) return;
+      if (!(await confirmLeave())) return;
       try {
         const sc = Ops.newScore({
           title: $('nTitle').value.trim() || 'Nova música', artist: $('nArtist').value.trim(),
@@ -1309,7 +1310,7 @@
     return Ops.normalize(sc, api.settings);
   }
   async function openDemo() {
-    if (S.dirty && !(await confirmDlg('Alterações não salvas', 'Abrir o exemplo vai descartar as alterações não salvas.', 'Descartar e abrir'))) return;
+    if (!(await confirmLeave())) return;
     try { setScore(buildDemo(), { name: 'Exemplo' }); S.tracks = [0, 1]; render(); buildTrackList(); toast('Exemplo aberto — aperte o play e abra o instrumento', 'ok'); }
     catch (e) { showMsg('Erro no exemplo', esc(e.message)); }
   }
@@ -1592,6 +1593,7 @@
     // trecho/repetição guardados por versões antigas são ignorados: a música sempre começa sem repetição
     try { api.tickPosition = 0; } catch (e) { /* sem MIDI */ }
     S.repPending = false;
+    S.repBase = S.rep ? captureSettings() : null;   // o que está aplicado; mudanças depois disso ficam pendentes (disquete)
     updateLoopStatus();
   }
   /* bytes da música como está agora (alterações não salvas entram também, verificadas) */
@@ -1763,6 +1765,99 @@
   };
   $('keyPop').onclick = e => e.stopPropagation();
 
+  /* ---------------- alterações para aplicar (disquete) ----------------
+     No repertório, velocidade, trilhas, metrônomo, contagem e mixer só ficam guardados se a pessoa aplicar.
+     Notas/tom alterados também entram na lista ("Salvar no app"). Trocar de música à mão pergunta;
+     a passagem automática do repertório descarta. Fechar o app de repente não aplica nada. */
+  const trackLabel = i => { const t = S.score && S.score.tracks[i]; return t ? ((t.name || '').trim() || 'Trilha ' + (i + 1)) : 'Trilha ' + (i + 1); };
+  const onOff = v => v ? 'ligado' : 'desligado';
+  function mixText(m) {
+    if (!m) return 'normal';
+    const p = []; if (m.mute) p.push('mudo'); if (m.solo) p.push('solo'); if (Math.abs((m.vol == null ? 1 : m.vol) - 1) > 0.001) p.push('volume ' + Math.round(m.vol * 100) + '%');
+    return p.join(', ') || 'normal';
+  }
+  function pendingChanges() {
+    const out = [];
+    if (S.rep && !S.repPending && S.repBase) {
+      const b = S.repBase, c = captureSettings();
+      if (c) {
+        out.cur = c;
+        if ((b.speed || 100) !== c.speed) out.push({ id: 'speed', label: 'Velocidade', from: (b.speed || 100) + '%', to: c.speed + '%' });
+        if (b.primary !== c.primary) out.push({ id: 'primary', label: 'Trilha principal', from: trackLabel(b.primary), to: trackLabel(c.primary) });
+        const bt = (b.tracks || []).slice().sort((x, y) => x - y), ct = c.tracks.slice().sort((x, y) => x - y);
+        if (bt.join(',') !== ct.join(',')) out.push({ id: 'tracks', label: 'Trilhas na tela', from: bt.map(trackLabel).join(', '), to: ct.map(trackLabel).join(', ') });
+        if (!!b.metro !== !!c.metro) out.push({ id: 'metro', label: 'Metrônomo', from: onOff(b.metro), to: onOff(c.metro) });
+        if (!!b.countIn !== !!c.countIn) out.push({ id: 'countIn', label: 'Contagem antes de tocar', from: onOff(b.countIn), to: onOff(c.countIn) });
+        const bm = b.mix || {}, keys = new Set([...Object.keys(bm), ...Object.keys(c.mix)]);
+        for (const k of [...keys].sort((x, y) => x - y)) { const x = mixText(bm[k]), y = mixText(c.mix[k]); if (x !== y) out.push({ id: 'mix:' + k, label: 'Mixer – ' + trackLabel(+k), from: x, to: y }); }
+      }
+    }
+    if (S.dirty && S.score) {
+      const p = []; if (S.chg.key) p.push('tom ' + Tr.tomText(S.chg.key)); if (S.chg.edited || !S.chg.key) p.push('notas editadas');
+      out.push({ id: 'score', score: true, label: 'Música alterada', to: p.join(' e ') + ' (salva no app)' });
+    }
+    return out;
+  }
+  function applyDialog(mode, items) {
+    return new Promise(res => {
+      const d = $('dlgApply');
+      $('apTitle').textContent = mode === 'leave' ? 'Aplicar as alterações antes de trocar?' : 'Aplicar alterações';
+      $('apSub').innerHTML = '<b>' + esc((S.score && (S.score.title || S.fileName)) || '') + '</b>' + (S.rep ? ' · repertório' : '') + (mode === 'leave' ? '<br>O que não for aplicado será descartado.' : '<br>Desmarque o que não quiser guardar.');
+      $('apList').innerHTML = items.map((it, i) => '<li><label class="ap-chk"><input type="checkbox" data-i="' + i + '" checked><span><b>' + esc(it.label) + '</b><i>' + (it.from != null ? esc(it.from) + ' → ' : '') + esc(it.to) + '</i></span></label></li>').join('');
+      const btns = mode === 'leave' ? [['cancel', 'Cancelar', ''], ['discard', 'Descartar', 'danger'], ['apply', 'Aplicar', 'primary']] : [['cancel', 'Cancelar', ''], ['apply', 'Aplicar', 'primary']];
+      $('apMenu').innerHTML = btns.map(([v, l, c]) => '<button type="button" class="btn ' + c + '" data-v="' + v + '">' + l + '</button>').join('');
+      let fin = false;
+      const done = v => { if (fin) return; fin = true; const sel = [...d.querySelectorAll('#apList input')].filter(x => x.checked).map(x => items[+x.dataset.i]); d.close(); res({ v, sel }); };
+      $('apMenu').onclick = e => { const b = e.target.closest('button'); if (b && !b.disabled) done(b.dataset.v); };
+      $('apList').onchange = () => { $('apMenu').querySelector('[data-v="apply"]').disabled = ![...d.querySelectorAll('#apList input')].some(x => x.checked); };
+      d.oncancel = e => { e.preventDefault(); done('cancel'); };
+      d.onclose = () => done('cancel');
+      d.showModal();
+    });
+  }
+  async function applySelected(sel, all) {
+    const ids = sel.filter(x => !x.score).map(x => x.id);
+    if (ids.length && S.rep && S.repBase) {
+      const cur = all.cur || captureSettings(), nb = JSON.parse(JSON.stringify(S.repBase));
+      nb.mix = nb.mix || {};
+      for (const id of ids) {
+        if (id.startsWith('mix:')) { const k = id.slice(4); if (cur.mix[k]) nb.mix[k] = cur.mix[k]; else delete nb.mix[k]; }
+        else nb[id] = cur[id];
+        if (id === 'primary') nb.trackName = cur.trackName;
+      }
+      nb.loop = null; nb.prog = null;
+      if (!(await Rep.saveSettings(S.rep.id, S.rep.iid, nb))) return false;
+      S.repBase = nb;
+    }
+    if (sel.some(x => x.score) && !(await saveGp())) return false;
+    updateDisk();
+    return true;
+  }
+  /** antes de trocar de música à mão: pergunta o que fazer com o que mudou (true = pode seguir) */
+  async function confirmLeave() {
+    const items = pendingChanges();
+    if (!items.length) return true;
+    const r = await applyDialog('leave', items);
+    if (r.v === 'cancel') return false;
+    if (r.v === 'apply' && !(await applySelected(r.sel, items))) return false;
+    S.dirty = false;   // o resto foi descartado
+    updateDisk();
+    return true;
+  }
+  function updateDisk() {
+    const n = S.score ? pendingChanges().length : 0, b = $('btnApply');
+    b.classList.toggle('on', n > 0); $('applyN').textContent = n ? String(n) : '';
+    b.title = n ? (n === 1 ? '1 alteração para aplicar' : n + ' alterações para aplicar') : 'Nada para aplicar';
+  }
+  setInterval(updateDisk, 1000);
+  $('btnApply').onclick = async () => {
+    const items = pendingChanges();
+    if (!items.length) { toast('Nada para aplicar'); return; }
+    const r = await applyDialog('disk', items);
+    if (r.v === 'apply' && r.sel.length && await applySelected(r.sel, items)) toast(r.sel.length === 1 ? 'Alteração aplicada' : r.sel.length + ' alterações aplicadas', 'ok');
+    updateDisk();
+  };
+
   /* ---------------- botões do topo / menus ---------------- */
   function closePopups(except) { ['menuMore', 'viewPanel', 'keyPop'].forEach(id => { if (id !== except) $(id).hidden = true; }); $('btnView').classList.toggle('on', !$('viewPanel').hidden); }
   $('wOpen').onclick = () => $('fileInput').click();
@@ -1829,7 +1924,7 @@
     S, api, Store, $, esc, icon, toast, showMsg, confirmDlg, fmtSize, FRAMED, Wake,
     getRecent, openRecent, removeRecent, clearRecent, updateRecentButton, gcFile, hashBytes,
     loadBytes, parseScore, currentBytes, captureSettings, applyPlaySettings, afterMidi, setCountIn,
-    zipStore, deliverZip, fileNotDelivered, clearDraft, addRecent,
+    zipStore, deliverZip, fileNotDelivered, clearDraft, addRecent, confirmLeave, updateDisk,
     openFilePicker: () => $('fileInput').click(), newSong: () => newSongDialog()
   });
   $('btnLib').onclick = () => Rep.openLibrary();
@@ -1885,6 +1980,6 @@
   // ganchos para testes automatizados
   window.TabStudio = {
     version: APP_VERSION, api, Ops, state: S,
-    loadBytes, setScore, getRecent, saveAsFile, downloadFile, rep: Rep, captureSettings, gcFile, openRecent, recentDialog, selectTrack, setVizMode, openLoopPanel, applyLoop, loopOff, setSpeed, seekToBar, setRangeBars, tbar, Wake: window.TabWake, zipStore, exportMidi, buildDemo, openDemo, toggleEdit, toggle3d, edAction, edSetFret, saveGp, undo, redo, commit, drawCursor
+    loadBytes, setScore, getRecent, saveAsFile, downloadFile, rep: Rep, captureSettings, gcFile, openRecent, recentDialog, selectTrack, setVizMode, openLoopPanel, applyLoop, loopOff, setSpeed, seekToBar, setRangeBars, tbar, Wake: window.TabWake, zipStore, exportMidi, buildDemo, openDemo, toggleEdit, toggle3d, edAction, edSetFret, saveGp, undo, redo, commit, drawCursor, updateDisk, pendingChanges
   };
 })();

@@ -55,21 +55,16 @@
     }
     function setOpt(repId, patch) { return mutate(l => { const r = l.find(x => x.id === repId); if (r) { Object.assign(r, patch); r.updated = Date.now(); } }); }
 
-    /* ---------------- ajustes da música aberta (gravados sozinhos) ---------------- */
-    let lastSaved = null, seq = 0;
-    function flushSettings() {
-      if (!S.rep || S.repPending) return;
-      const st = C.captureSettings(); if (!st) return;
-      const js = JSON.stringify(st); if (js === lastSaved) return;
-      lastSaved = js;
-      const { id, iid } = S.rep;
-      mutate(l => { const r = l.find(x => x.id === id); const it = r && r.items.find(x => x.iid === iid); if (it) { it.settings = st; r.updated = Date.now(); } })
-        .catch(e => { lastSaved = null; toast('Atenção: os ajustes desta música no repertório não foram gravados (' + ((e && e.message) || e) + ')', 'err', 7000); });
+    /* ---------------- ajustes da música aberta ----------------
+       Nada é gravado sozinho: os ajustes só ficam no repertório quando a pessoa aplica (disquete do player). */
+    let seq = 0;
+    async function saveSettings(id, iid, st) {
+      try {
+        await mutate(l => { const r = l.find(x => x.id === id); const it = r && r.items.find(x => x.iid === iid); if (!it) throw new Error('música não encontrada no repertório'); it.settings = st; r.updated = Date.now(); });
+        refreshLib(); return true;
+      } catch (e) { saveErr(e, 'Os ajustes da música'); return false; }
     }
-    setInterval(flushSettings, 1500);
-    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushSettings(); });
-    root.addEventListener('pagehide', flushSettings);
-    function leaving() { clearTimeout(S.repWait); if (S.rep) flushSettings(); }
+    function leaving() { clearTimeout(S.repWait); }
     function cleanSettings(st) {
       if (!st || typeof st !== 'object') return null;
       const int = (v, a, b) => Number.isFinite(+v) ? Math.max(a, Math.min(b, Math.round(+v))) : null;
@@ -81,20 +76,21 @@
     }
 
     /* ---------------- tocar em sequência ---------------- */
-    async function openItem(repId, index, autoplay) {
+    // auto = passagem automática do repertório: não pergunta nada, o que não foi aplicado é descartado
+    async function openItem(repId, index, autoplay, auto) {
       const r = (await list()).find(x => x.id === repId);
       if (!r || index < 0 || index >= r.items.length) return false;
       const it = r.items[index];
-      if (S.dirty && !(await confirmDlg('Alterações não salvas', 'A música atual tem alterações que ainda não foram salvas. Abrir outra música vai descartá-las.', 'Descartar e abrir'))) return false;
+      if (!auto && !(await C.confirmLeave())) return false;
+      if (S.playing) api.stop();
       let bytes = null; try { bytes = await Store.get('file:' + it.fid); } catch (e) { bytes = null; }
       if (!bytes) { showMsg('Música não encontrada', 'O arquivo de <b>' + esc(songName(it)) + '</b> não está mais guardado neste aparelho. Tire a música do repertório e adicione de novo.'); return false; }
       const st = it.settings || {};
       const token = ++seq;
-      S.dirty = false; // já confirmado acima
+      S.dirty = false; // confirmado acima (ou descartado na passagem automática)
       const ok = C.loadBytes(bytes, it.name || songName(it), { rep: { id: r.id, iid: it.iid }, tracks: st.tracks, primary: st.primary, mix: st.mix });
       if (!ok) { S.rep = null; S.repPending = false; updateBar(); return false; }
       C.clearDraft();
-      lastSaved = JSON.stringify(it.settings || null);
       let done = false;
       const apply = () => {
         if (done || token !== seq || !S.rep || S.rep.iid !== it.iid) return;
@@ -121,9 +117,7 @@
       const i = r.items.findIndex(x => x.iid === S.rep.iid);
       let ni = i + d;
       if (ni < 0 || ni >= r.items.length) { if (!r.repeat) { toast(d > 0 ? 'Esta é a última música do repertório' : 'Esta é a primeira música do repertório'); return; } ni = (ni + r.items.length) % r.items.length; }
-      const was = S.playing;
-      if (was) api.stop();
-      openItem(r.id, ni, was);
+      openItem(r.id, ni, S.playing);
     }
     function onFinished() {
       if (!S.rep || api.isLooping) return;
@@ -142,7 +136,9 @@
         clearTimeout(S.repWait);
         S.repWait = setTimeout(() => {
           if (token !== seq || !S.rep || S.rep.iid !== cur.iid || S.playing) return;
-          openItem(r.id, ni, true);
+          // notas editadas não são jogadas fora sem perguntar: para e avisa
+          if (S.dirty) { toast('A música tem alterações nas notas: aplique ou descarte no disquete para seguir o repertório', 'err', 7000); return; }
+          openItem(r.id, ni, true, true);
         }, wait);
       });
     }
@@ -179,7 +175,10 @@
     $('rbPrev').onclick = () => step(-1);
     $('rbNext').onclick = () => step(1);
     $('rbName').onclick = () => { if (S.rep) openLibrary({ rep: S.rep.id }); };
-    $('rbClose').onclick = () => { leaving(); S.rep = null; S.repPending = false; updateBar(); toast('Saiu do repertório — a música continua aberta'); };
+    $('rbClose').onclick = async () => {
+      if (!(await C.confirmLeave())) return;
+      leaving(); S.rep = null; S.repPending = false; S.repBase = null; updateBar(); C.updateDisk(); toast('Saiu do repertório — a música continua aberta');
+    };
 
     /* ---------------- nome (novo / renomear) ---------------- */
     function askName(title, val) {
@@ -215,7 +214,7 @@
         try {
           const res = await addItem(id, item);
           toast(res.status === 'updated' ? 'Já estava em "' + res.rep + '": ajustes atualizados' : 'Adicionada a "' + res.rep + '" (' + plural(res.n, 'música', 'músicas') + ')', 'ok', 4000);
-          if (S.rep && S.rep.id === id && res.iid === S.rep.iid) lastSaved = JSON.stringify(item.settings || null);
+          if (S.rep && S.rep.id === id && res.iid === S.rep.iid && item.settings) S.repBase = item.settings;
           refreshLib(); updateBar();
         } catch (e) { await C.gcFile(item.fid).catch(() => { /* segue */ }); saveErr(e, 'A música'); }
       };
@@ -320,7 +319,7 @@
       reps.forEach(r => {
         const c = card(r, true);
         c.querySelector('.rr-open').onclick = () => { L.repId = r.id; renderLib(); };
-        c.querySelector('.rr-play').onclick = () => { closeLib(); if (S.playing) api.stop(); openItem(r.id, 0, true); };
+        c.querySelector('.rr-play').onclick = () => { closeLib(); openItem(r.id, 0, true); };
         grid.appendChild(c);
       });
       const nb = newCard();
@@ -406,7 +405,7 @@
         try { await setOpt(r.id, { repeat: v }); } catch (e) { $('repRepeat').checked = !v; saveErr(e); return; }
         r.repeat = v; updateBar();
       };
-      $('repPlay').onclick = async () => { closeLib(); if (S.playing) api.stop(); openItem(r.id, 0, true); };
+      $('repPlay').onclick = async () => { closeLib(); openItem(r.id, 0, true); };
     }
     // arrastar pela alça para mudar a ordem (mouse e toque)
     function enableDrag(box, onDone) {
@@ -626,6 +625,6 @@
       if (L.repId) { L.repId = null; renderLib(); return true; }
       return false;
     }
-    return { back, openLibrary, addCurrent, usesFile, leaving, onFinished, onSaved, updateBar, isRepZip, importBytes, list, openItem, step, buildExport, readZip, flush: flushSettings, createRep, addItem };
+    return { back, openLibrary, addCurrent, usesFile, leaving, onFinished, onSaved, updateBar, isRepZip, importBytes, list, openItem, step, buildExport, readZip, saveSettings, createRep, addItem };
   };
 })(window);
