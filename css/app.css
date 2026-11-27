@@ -709,7 +709,7 @@ body.inst-fs #toast { z-index: 2600; }
 /* modo "por nota": brilho extra rápido a cada nota (por cima do aceso do compasso) */
 .tn-dot.flash, .tl-dot.flash { animation: dotFlash .26s ease-out; }
 @keyframes dotFlash {
-  0% { transform: scale(1.55); filter: brightness(1.9) saturate(1.2); box-shadow: 0 0 10px 4px var(--tc, currentColor); opacity: 1; }
+  0% { transform: scale(1.35); filter: brightness(1.5) saturate(1.1); box-shadow: 0 0 7px 2px var(--tc, currentColor); opacity: 1; }
   100% { transform: scale(1); filter: none; }
 }
 @media (prefers-reduced-motion: reduce) { .tn-dot.flash, .tl-dot.flash { animation: none; } }
