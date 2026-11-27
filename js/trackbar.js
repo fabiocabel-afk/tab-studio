@@ -76,6 +76,7 @@
       const changed = bar !== this.cur;
       this.cur = bar; this.playing = !!playing;
       if (!changed) return;
+      this.lightDots(true);
       this.updateLine(); this.drawStrip();
       if (!this.collapsed) { this.draw(); this.scrollToBar(bar); }
     }
@@ -84,11 +85,29 @@
 
     color(i) { return COLORS[i % COLORS.length]; }
 
+    /* bolinha de cada trilha: acesa quando a trilha tem notas no compasso atual, apagada (mesma cor, fraca) quando não tem.
+       Na virada do compasso, as acesas pulsam juntas (todas no mesmo tempo). */
+    lightDots(pulse) {
+      const s = this.score; if (!s) return;
+      const dots = [...this.names.querySelectorAll('.tn-dot')];
+      dots.forEach((d, i) => {
+        const on = !!(this.occ[i] && this.occ[i][this.cur]);
+        d.classList.toggle('lit', on);
+        if (pulse && on) { d.classList.remove('pulse'); void d.offsetWidth; d.classList.add('pulse'); }
+        else if (!on) d.classList.remove('pulse');
+      });
+      const ld = this.line.querySelector('.tl-dot');
+      const lon = !!(this.occ[this.primary] && this.occ[this.primary][this.cur]);
+      ld.classList.toggle('lit', lon);
+      if (pulse && lon) { ld.classList.remove('pulse'); void ld.offsetWidth; ld.classList.add('pulse'); }
+    }
+
     updateLine() {
       const s = this.score;
       const t = s && s.tracks[this.primary];
       this.line.querySelector('.tl-name').textContent = t ? (t.name || ('Trilha ' + (t.index + 1))) : '—';
-      this.line.querySelector('.tl-dot').style.background = this.color(this.primary);
+      this.line.querySelector('.tl-dot').style.background = this.line.querySelector('.tl-dot').style.color = this.color(this.primary);
+      this.lightDots(false);
       this.line.querySelector('.tl-bar').textContent = s ? ('Compasso ' + (this.cur + 1) + ' / ' + s.masterBars.length) : 'Compasso – / –';
     }
 
@@ -107,6 +126,7 @@
         row.querySelector('.s').addEventListener('click', e => { e.stopPropagation(); if (this.cb.onSolo) this.cb.onSolo(i); });
         box.appendChild(row);
       });
+      this.lightDots(false);
     }
 
     _ctx(canvas, w, h) {

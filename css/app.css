@@ -695,3 +695,14 @@ body.inst-fs #toast { z-index: 2600; }
   body.inst-fs.fs-ui .fs-top { bottom: calc(var(--fs-strip-h, 0px) + 70px); }
 }
 @media (max-width: 640px) { .fs-time span { display: none; } .fs-speed { min-width: 40px; font-size: 13px; } }
+
+/* ---------- v2.8.1: bolinhas das trilhas acendem no compasso com notas ---------- */
+.tn-dot, .tl-dot { opacity: .3; transition: opacity .18s ease, box-shadow .18s ease; }
+.tn-dot.lit { opacity: 1; box-shadow: 0 0 6px 1px var(--tc, var(--orange)); }
+.tl-dot.lit { opacity: 1; box-shadow: 0 0 6px 1px currentColor; }
+.tn-dot.pulse, .tl-dot.pulse { animation: dotPulse .42s ease-out; }
+@keyframes dotPulse {
+  0% { transform: scale(1.75); filter: brightness(1.45); }
+  100% { transform: scale(1); filter: none; }
+}
+@media (prefers-reduced-motion: reduce) { .tn-dot.pulse, .tl-dot.pulse { animation: none; } }
