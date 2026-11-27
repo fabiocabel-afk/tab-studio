@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '2.8.1';
+  const APP_VERSION = '2.8.2';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Tr = window.makeTranspose(at);   // tom do conjunto (js/transpose.js)
@@ -578,6 +578,18 @@
     S.cur = Ops.clampCursor(S.score, c);
     updateEditor(); drawCursor();
   });
+  // modo "por nota": cada nota que começa faz a bolinha da sua trilha brilhar mais
+  let prevActive = new Set();
+  api.activeBeatsChanged.on(e => {
+    if (prefs.dotGlow !== 'note' || !S.playing) { prevActive = new Set(); return; }
+    const now = new Set(), hit = new Set();
+    for (const b of e.activeBeats) {
+      now.add(b.id);
+      if (!prevActive.has(b.id) && b.notes.some(n => !n.isTieDestination)) hit.add(b.voice.bar.staff.track.index);
+    }
+    prevActive = now;
+    hit.forEach(i => tbar.flash(i));
+  });
   api.activeBeatsChanged.on(e => {
     if (!S.fb || !S.playing || S.threeTrack < 0) return;
     const beats = e.activeBeats.filter(b => b.voice.bar.staff.track.index === S.threeTrack);
@@ -697,6 +709,8 @@
     selectTrack(i);
     toast(S.score.tracks[i].name.trim() || 'Trilha ' + (i + 1));
   }
+  $('selDotGlow').value = prefs.dotGlow === 'note' ? 'note' : 'bar';
+  $('selDotGlow').onchange = () => { prefs.dotGlow = $('selDotGlow').value; savePrefs(); };
   $('chkSkipEmpty').checked = prefs.skipEmpty !== false;
   $('chkSkipEmpty').onchange = () => { prefs.skipEmpty = $('chkSkipEmpty').checked; savePrefs(); };
   $('btnTrkUp').onclick = () => stepTrack(-1);
@@ -1718,6 +1732,10 @@
     }
     api.tickPosition = r.start;
     tbar.setPos(r.beat.voice.bar.index, false);
+    if (prefs.dotGlow === 'note' && r.beatLookup) {
+      const hit = new Set(r.beatLookup.highlightedBeats.filter(x => x.playbackStart === r.beatLookup.start && x.beat.notes.some(n => !n.isTieDestination)).map(x => x.beat.voice.bar.staff.track.index));
+      hit.forEach(i => tbar.flash(i));
+    }
     scheduleIdle();
     try { if (api.scrollToCursor) api.scrollToCursor(); } catch (e) { /* sem rolagem automática */ }
   }

@@ -85,6 +85,16 @@
 
     color(i) { return COLORS[i % COLORS.length]; }
 
+    /* modo "por nota": a bolinha (já acesa no compasso) dá um brilho extra a cada nota tocada */
+    flash(i) {
+      const d = this.names.querySelectorAll('.tn-dot')[i];
+      const now = performance.now(); this._fl = this._fl || {};
+      if (d && !(now - (this._fl[i] || 0) < 70)) {   // notas muito rápidas: no máximo ~14 brilhos por segundo
+        this._fl[i] = now;
+        d.classList.remove('flash'); void d.offsetWidth; d.classList.add('flash');
+      }
+      if (i === this.primary) { const ld = this.line.querySelector('.tl-dot'); ld.classList.remove('flash'); void ld.offsetWidth; ld.classList.add('flash'); }
+    }
     /* bolinha de cada trilha: acesa quando a trilha tem notas no compasso atual, apagada (mesma cor, fraca) quando não tem.
        Na virada do compasso, as acesas pulsam juntas (todas no mesmo tempo). */
     lightDots(pulse) {
