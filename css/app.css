@@ -713,3 +713,26 @@ body.inst-fs #toast { z-index: 2600; }
   100% { transform: scale(1); filter: none; }
 }
 @media (prefers-reduced-motion: reduce) { .tn-dot.flash, .tl-dot.flash { animation: none; } }
+
+/* ---------- v2.8.4: ✕ em toda janelinha, proteção do toque fora, volume vertical ---------- */
+.pop-shield { position: fixed; z-index: 45; background: transparent; touch-action: none; }
+.pop-shield[hidden] { display: none; }
+.pop-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.pop-head b { font-size: 14.5px; color: var(--tx); font-weight: 800; }
+.pop-x { width: 32px; height: 32px; flex: none; }
+.pop-x svg.i { width: 18px; height: 18px; }
+.menu-head { padding: 4px 4px 4px 12px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.menu-head b { font-size: 13px; color: var(--tx2); text-transform: uppercase; letter-spacing: .06em; }
+.kp-head .pop-head { margin-bottom: 2px; }
+.vol-pop { min-width: 0 !important; width: 104px; align-items: center; gap: 8px; padding: 10px 10px 12px; }
+.vol-pop .pop-head { width: 100%; }
+.vol-pop .pop-head b { font-size: 13px; }
+.vol-val { font-size: 15px; color: var(--tx); font-variant-numeric: tabular-nums; }
+.vslider { position: relative; width: 48px; height: 180px; cursor: pointer; touch-action: none; outline: none; border-radius: 12px; }
+.vslider:focus-visible { box-shadow: 0 0 0 2px var(--brand2); }
+.vs-track { position: absolute; left: 50%; top: 10px; bottom: 10px; width: 8px; margin-left: -4px; border-radius: 4px; background: var(--surf3); overflow: hidden; }
+.vs-fill { position: absolute; left: 0; right: 0; bottom: 0; background: linear-gradient(0deg, #642A90, #a45fd8); border-radius: 4px; }
+.vs-thumb { position: absolute; left: 50%; width: 24px; height: 24px; margin-left: -12px; margin-bottom: -12px; border-radius: 50%; background: #fff; border: 3px solid #8a45c4; box-shadow: 0 2px 8px rgba(0,0,0,.35); pointer-events: none; }
+.vol-mute { width: 100%; height: 34px; padding: 0 6px; font-size: 12px; gap: 4px; justify-content: center; }
+.vol-mute svg.i { width: 16px; height: 16px; }
+.vol-btn.on { background: var(--brand); color: #fff; }

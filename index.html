@@ -45,6 +45,10 @@
   <symbol id="i-collapse" viewBox="0 0 24 24"><path d="M8 4h2v6H4V8h4V4zm6 0h2v4h4v2h-6V4zM4 14h6v6H8v-4H4v-2zm10 0h6v2h-4v4h-2v-6z"/></symbol>
   <symbol id="i-ctl" viewBox="0 0 24 24"><path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z"/></symbol>
   <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M16.48 2.52c3.27 1.55 5.61 4.72 5.97 8.48h1.5C23.44 4.84 18.29 0 12 0l-.66.03 3.81 3.81 1.33-1.32zM10.23 1.75a1.49 1.49 0 0 0-2.12 0L1.75 8.11a1.49 1.49 0 0 0 0 2.12l12.02 12.02c.59.59 1.54.59 2.12 0l6.36-6.36c.59-.59.59-1.54 0-2.12L10.23 1.75zm4.6 19.44L2.81 9.17l6.36-6.36 12.02 12.02-6.36 6.36zM7.52 21.48A10.5 10.5 0 0 1 1.55 13H.05C.56 19.16 5.71 24 12 24l.66-.03-3.81-3.81-1.33 1.32z"/></symbol>
+  <symbol id="i-vol0" viewBox="0 0 24 24"><path d="M3 9h4l5-4v14l-5-4H3z"/><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="M16 9.5l5 5M21 9.5l-5 5"/></symbol>
+  <symbol id="i-vol1" viewBox="0 0 24 24"><path d="M3 9h4l5-4v14l-5-4H3z"/><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="M15 10a3 3 0 0 1 0 4"/></symbol>
+  <symbol id="i-vol2" viewBox="0 0 24 24"><path d="M3 9h4l5-4v14l-5-4H3z"/><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="M15 10a3 3 0 0 1 0 4M17.6 7.6a6.5 6.5 0 0 1 0 8.8"/></symbol>
+  <symbol id="i-vol3" viewBox="0 0 24 24"><path d="M3 9h4l5-4v14l-5-4H3z"/><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="M15 10a3 3 0 0 1 0 4M17.6 7.6a6.5 6.5 0 0 1 0 8.8M20.2 5.2a10 10 0 0 1 0 13.6"/></symbol>
   <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 2.6l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.4l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="M9.5 16.2L5.3 12l-1.4 1.4 5.6 5.6L20.1 8.4 18.7 7z"/></symbol>
   <symbol id="i-flip" viewBox="0 0 24 24"><path d="M7 4l-4 4 4 4V9h10V7H7zm10 8v3H7v2h10v3l4-4z"/></symbol>
@@ -102,6 +106,7 @@
 
   <!-- Menu "Mais" -->
   <div class="menu" id="menuMore" hidden>
+    <div class="pop-head menu-head"><b>Menu</b><button type="button" class="x pop-x" data-popclose title="Fechar"><svg class="i" aria-hidden="true"><use href="#i-close"/></svg></button></div>
     <button data-act="open"><svg class="i" aria-hidden="true"><use href="#i-folder"/></svg><span>Abrir arquivo…</span><kbd>Ctrl+O</kbd></button>
     <button data-act="recent"><svg class="i" aria-hidden="true"><use href="#i-clock"/></svg><span>Arquivos recentes</span></button>
     <button data-act="new"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg><span>Nova música</span></button>
@@ -125,12 +130,13 @@
 
   <!-- Testar tom (player) -->
   <div class="popover key-pop" id="keyPop" hidden>
-    <div class="kp-head"><b>Testar tom</b><span class="muted">Ouça e veja em outro tom. A música só muda se você tocar em "Aplicar à música".</span></div>
+    <div class="kp-head"><div class="pop-head"><b>Testar tom</b><button type="button" class="x pop-x" data-popclose title="Fechar"><svg class="i" aria-hidden="true"><use href="#i-close"/></svg></button></div><span class="muted">Ouça e veja em outro tom. A música só muda se você tocar em "Aplicar à música".</span></div>
     <div class="key-box" data-where="player"></div>
   </div>
 
   <!-- Painel de visualização -->
   <div class="popover" id="viewPanel" hidden>
+    <div class="pop-head"><b>Visualização</b><button type="button" class="x pop-x" data-popclose title="Fechar"><svg class="i" aria-hidden="true"><use href="#i-close"/></svg></button></div>
     <label>Notação
       <select id="selStave">
         <option value="Auto" title="Cordas: tablatura + ritmo · Teclado, bateria e outros: partitura">Automático</option>
@@ -371,12 +377,21 @@
         <button class="pb sq tog" id="btnMetro" title="Metrônomo"><svg class="i" aria-hidden="true"><use href="#i-metro"/></svg></button>
         <button class="pb sq tog" id="btnCountIn" title="Contagem antes de tocar">1·2</button>
         <button class="pb sq" id="btnClearSel" title="Limpar trecho selecionado"><svg class="i" aria-hidden="true"><use href="#i-select"/></svg></button>
-        <label class="pl-ctl vol" title="Volume geral"><svg class="i" aria-hidden="true"><use href="#i-vol"/></svg><input type="range" id="rngVol" min="0" max="100" value="80"></label>
+        <button class="pb sq vol-btn" id="btnVol" title="Volume geral" aria-haspopup="true"><svg class="i" aria-hidden="true"><use href="#i-vol2"/></svg></button>
       </div>
     </div>
   </footer>
 
   <!-- Painel de repetição -->
+  <!-- volume (vertical) -->
+  <div class="popover vol-pop" id="volPop" hidden>
+    <div class="pop-head"><b>Volume</b><button type="button" class="x pop-x" data-popclose title="Fechar"><svg class="i" aria-hidden="true"><use href="#i-close"/></svg></button></div>
+    <b class="vol-val" id="volVal">80%</b>
+    <div class="vslider" id="volSlider" role="slider" tabindex="0" aria-label="Volume geral" aria-valuemin="0" aria-valuemax="100" aria-valuenow="80"><div class="vs-track"><div class="vs-fill" id="volFill"></div></div><div class="vs-thumb" id="volThumb"></div></div>
+    <button type="button" class="btn vol-mute" id="volMute"><svg class="i" aria-hidden="true"><use href="#i-vol0"/></svg><span>Mudo</span></button>
+  </div>
+  <div class="pop-shield" id="popShield" hidden></div>
+
   <div class="loop-panel" id="loopPanel" hidden>
     <div class="lp-head"><b><svg class="i" aria-hidden="true"><use href="#i-loop"/></svg>Repetir trecho</b><button class="x" id="lpClose" title="Fechar"><svg class="i" aria-hidden="true"><use href="#i-close"/></svg></button></div>
     <div class="lp-row">

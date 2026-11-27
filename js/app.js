@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '2.8.3';
+  const APP_VERSION = '2.8.4';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Tr = window.makeTranspose(at);   // tom do conjunto (js/transpose.js)
@@ -726,8 +726,46 @@
   $('btnMetro').onclick = () => setMetro(!$('btnMetro').classList.contains('on'));
   $('btnCountIn').onclick = () => setCountIn(!$('btnCountIn').classList.contains('on'));
   $('btnClearSel').onclick = () => { api.playbackRange = null; try { api.clearPlaybackRangeHighlight(); } catch (e) { /* versão sem destaque */ } tbar.setRange(null); toast('Trecho limpo'); };
-  $('rngVol').oninput = () => { api.masterVolume = $('rngVol').value / 100; };
-  api.masterVolume = 0.8;
+  /* volume: botão com alto-falante (tracinhos conforme o nível) e controle vertical */
+  function setVol(v, save) {
+    v = Math.max(0, Math.min(100, Math.round(v)));
+    S.vol = v; api.masterVolume = v / 100;
+    const lv = v <= 0 ? 0 : v < 34 ? 1 : v < 67 ? 2 : 3;
+    $('btnVol').innerHTML = icon('vol' + lv); $('btnVol').title = 'Volume geral: ' + (v ? v + '%' : 'mudo');
+    $('volVal').textContent = v + '%';
+    $('volFill').style.height = v + '%';
+    $('volThumb').style.bottom = 'calc(10px + (100% - 20px) * ' + (v / 100) + ')';
+    $('volSlider').setAttribute('aria-valuenow', v);
+    $('volMute').innerHTML = icon(v ? 'vol0' : 'vol2') + '<span>' + (v ? 'Mudo' : 'Ligar o som') + '</span>';
+    if (save) { prefs.vol = v; savePrefs(); }
+  }
+  setVol(prefs.vol == null ? 80 : prefs.vol, false);
+  $('btnVol').onclick = e => {
+    e.stopPropagation();
+    const p = $('volPop'), was = p.hidden;
+    closePopups('volPop'); p.hidden = !was;
+    $('btnVol').classList.toggle('on', !p.hidden);
+    if (!p.hidden) {
+      const r = $('btnVol').getBoundingClientRect(), w = p.offsetWidth || 96;
+      p.style.left = Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2)) + 'px';
+      p.style.top = 'auto'; p.style.right = 'auto'; p.style.bottom = (innerHeight - r.top + 8) + 'px';
+    }
+  };
+  $('volPop').onclick = e => e.stopPropagation();
+  {
+    const sl = $('volSlider'); let drag = false;
+    const at = y => { const r = sl.getBoundingClientRect(); return (r.bottom - 10 - y) / (r.height - 20) * 100; };
+    sl.addEventListener('pointerdown', e => { drag = true; try { sl.setPointerCapture(e.pointerId); } catch (err) { /* sem captura */ } setVol(at(e.clientY), false); e.preventDefault(); });
+    sl.addEventListener('pointermove', e => { if (drag) setVol(at(e.clientY), false); });
+    const end = () => { if (drag) { drag = false; setVol(S.vol, true); } };
+    sl.addEventListener('pointerup', end); sl.addEventListener('pointercancel', end);
+    sl.addEventListener('keydown', e => {
+      const k = e.key, d = k === 'ArrowUp' || k === 'ArrowRight' ? 5 : k === 'ArrowDown' || k === 'ArrowLeft' ? -5 : 0;
+      if (d) { e.preventDefault(); e.stopPropagation(); setVol(S.vol + d, true); }
+      else if (k === 'Home' || k === 'End') { e.preventDefault(); setVol(k === 'End' ? 100 : 0, true); }
+    });
+    $('volMute').onclick = () => { if (S.vol > 0) { S.volPrev = S.vol; setVol(0, true); } else setVol(S.volPrev || 80, true); };
+  }
 
   /* ---------------- repetição (início/fim e velocidade progressiva) ---------------- */
   function setSpeed(pct) {
@@ -1770,8 +1808,8 @@
   $('selStave').onchange = () => { prefs.stave = $('selStave').value; applyDisplay(); };
   $('selLayout').onchange = () => { prefs.layout = $('selLayout').value; applyDisplay(); };
   $('rngZoom').oninput = () => { $('zoomVal').textContent = $('rngZoom').value + '%'; };
-  ['rngZoom', 'rngVol', 'rngSeek'].forEach(id => paintRange($(id)));
-  $('rngZoom').classList.add('purple'); $('rngVol').classList.add('purple');
+  ['rngZoom', 'rngSeek'].forEach(id => paintRange($(id)));
+  $('rngZoom').classList.add('purple');
   applyTheme();
   $('btnTheme').onclick = () => { prefs.theme = prefs.theme === 'light' ? 'dark' : 'light'; savePrefs(); applyTheme(); };
   $('rngZoom').onchange = () => { prefs.zoom = +$('rngZoom').value; applyDisplay(); };
@@ -2143,7 +2181,27 @@
   };
 
   /* ---------------- botões do topo / menus ---------------- */
-  function closePopups(except) { ['menuMore', 'viewPanel', 'keyPop'].forEach(id => { if (id !== except) $(id).hidden = true; }); $('btnView').classList.toggle('on', !$('viewPanel').hidden); }
+  const POPS = ['menuMore', 'viewPanel', 'keyPop', 'volPop'];
+  function closePopups(except) { POPS.forEach(id => { if (id !== except) $(id).hidden = true; }); $('btnView').classList.toggle('on', !$('viewPanel').hidden); $('btnVol').classList.toggle('on', !$('volPop').hidden); }
+  // toda janelinha flutuante tem ✕; e o toque fora dela só fecha (não chega na partitura nem muda a posição)
+  document.querySelectorAll('[data-popclose]').forEach(b => b.onclick = e => { e.stopPropagation(); closePopups(); });
+  {
+    const sh = $('popShield');
+    // cobre só a área da partitura/trilhas/instrumento: os botões do topo e do player continuam funcionando no 1º toque
+    const sync = () => {
+      const open = POPS.some(id => !$(id).hidden);
+      if (open) { const r = $('main').getBoundingClientRect(); Object.assign(sh.style, { left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px' }); }
+      sh.hidden = !open;
+    };
+    const mo = new MutationObserver(sync);
+    POPS.forEach(id => mo.observe($(id), { attributes: true, attributeFilter: ['hidden'] }));
+    const shut = e => { e.preventDefault(); e.stopPropagation(); closePopups(); };
+    sh.addEventListener('pointerdown', shut); sh.addEventListener('mousedown', e => { e.preventDefault(); e.stopPropagation(); });
+    sh.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); });
+    sh.addEventListener('wheel', () => closePopups(), { passive: true });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && POPS.some(id => !$(id).hidden) && !(window.CustomSelect && CustomSelect.isOpen())) { e.preventDefault(); closePopups(); } });
+    sync();
+  }
   $('wOpen').onclick = () => $('fileInput').click();
   $('fileInput').onchange = () => { const f = $('fileInput').files[0]; $('fileInput').value = ''; openFile(f); };
   $('wNew').onclick = newSongDialog;
@@ -2232,7 +2290,7 @@
     const guard = () => { try { history.pushState({ tabstudio: 1 }, ''); } catch (e) { /* sem histórico */ } };
     const closeTop = () => {
       if (window.CustomSelect && CustomSelect.isOpen()) { CustomSelect.close(); return true; }
-      if (!$('menuMore').hidden || !$('viewPanel').hidden || !$('keyPop').hidden) { closePopups(); return true; }
+      if (POPS.some(id => !$(id).hidden)) { closePopups(); return true; }
       const ds = [...document.querySelectorAll('dialog[open]')];
       if (ds.length) {
         const d = ds[ds.length - 1];
