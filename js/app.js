@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '2.10.0';
+  const APP_VERSION = '2.11.0';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Tr = window.makeTranspose(at);   // tom do conjunto (js/transpose.js)
@@ -398,6 +398,7 @@
     render(); refreshTrackUI();
   }
   function refreshTrackUI() {
+    setTimeout(syncFocus, 0);
     updateTuneChip();
     if (!S.score) return;
     if (!S.tracks.includes(S.primary)) S.primary = S.tracks[0];
@@ -923,6 +924,16 @@
   });
   $('toneReset').onclick = e => { e.stopPropagation(); prefs.tone = {}; savePrefs(); setEq(); showTone(); applyInstTone(); };
   showTone();
+  /* destacar o instrumento da tela */
+  function showFocus() {
+    $('chkFocus').checked = !!prefs.focusVol;
+    const lv = prefs.focusLvl || 1;
+    document.querySelectorAll('#focusLvl button').forEach(b => { b.classList.toggle('on', +b.dataset.l === lv); b.disabled = !prefs.focusVol; });
+    $('focusLvl').classList.toggle('off', !prefs.focusVol);
+  }
+  $('chkFocus').onchange = () => { prefs.focusVol = $('chkFocus').checked; savePrefs(); showFocus(); syncFocus(); };
+  document.querySelectorAll('#focusLvl button').forEach(b => b.onclick = e => { e.stopPropagation(); prefs.focusLvl = +b.dataset.l; savePrefs(); showFocus(); syncFocus(); });
+  showFocus();
   $('selDotGlow').value = prefs.dotGlow === 'note' ? 'note' : 'bar';
   $('selDotGlow').onchange = () => { prefs.dotGlow = $('selDotGlow').value; savePrefs(); };
   $('chkSkipEmpty').checked = prefs.skipEmpty !== false;
@@ -1076,13 +1087,21 @@
 
   /* ---------------- trilhas / mixer ---------------- */
   function mixOf(i) { return S.mix[i] || (S.mix[i] = { mute: false, solo: false, vol: 1 }); }
+  /* destaque: a trilha da tela (a selecionada, ▲▼) toca um pouco mais alta. Não mexe no Mixer nem é salvo:
+     o volume do Mixer é multiplicado por esse ganho só enquanto ela está selecionada. */
+  const FOCUS_DB = { 1: 2, 2: 4, 3: 6 };
+  function focusDb() { return prefs.focusVol ? (FOCUS_DB[prefs.focusLvl] || 2) : 0; }
+  function focusGain(t) { const db = focusDb(); return db && S.score && S.score.tracks.length > 1 && t.index === S.primary ? Math.pow(10, db / 20) : 1; }
+  function trackVol(t) { const m = S.mix[t.index]; return (m ? m.vol : 1) * focusGain(t); }
   function applyMix() {
     if (!S.score) return;
-    for (const t of S.score.tracks) {
-      const m = S.mix[t.index]; if (!m) continue;
-      api.changeTrackMute([t], m.mute); api.changeTrackSolo([t], m.solo); api.changeTrackVolume([t], m.vol);
-    }
+    for (const t of S.score.tracks) { const m = S.mix[t.index]; if (m) { api.changeTrackMute([t], m.mute); api.changeTrackSolo([t], m.solo); } }
+    // a destacada por último: se dividir o canal de som com outra trilha, o destaque vale para o canal
+    const order = S.score.tracks.filter(t => t.index !== S.primary).concat(S.score.tracks.filter(t => t.index === S.primary));
+    for (const t of order) api.changeTrackVolume([t], trackVol(t));
+    S.focusKey = focusDb() + ':' + S.primary;
   }
+  function syncFocus() { if (S.score && !waitMidi && S.focusKey !== focusDb() + ':' + S.primary) applyMix(); }
   function buildTrackList() {
     const box = $('trackList'); box.innerHTML = '';
     if (!S.score) return;
@@ -1107,7 +1126,7 @@
       name.onclick = e => selectTrack(t.index, e.ctrlKey || e.metaKey || e.shiftKey);
       bm.onclick = () => setMute(t.index);
       bs.onclick = () => setSolo(t.index);
-      d.querySelector('.vol input').oninput = ev => { m.vol = ev.target.value / 100; api.changeTrackVolume([t], m.vol); };
+      d.querySelector('.vol input').oninput = ev => { m.vol = ev.target.value / 100; api.changeTrackVolume([t], trackVol(t)); };
       paintRange(d.querySelector('.vol input'));
       box.appendChild(d);
     });
@@ -2319,7 +2338,7 @@
       else if (it.id.startsWith('mix:')) {
         const k = +it.id.slice(4), m = (b.mix || {})[k], t = S.score && S.score.tracks[k];
         S.mix[k] = m ? { mute: !!m.mute, solo: !!m.solo, vol: m.vol == null ? 1 : m.vol } : { mute: false, solo: false, vol: 1 };
-        if (t) { api.changeTrackMute([t], S.mix[k].mute); api.changeTrackSolo([t], S.mix[k].solo); api.changeTrackVolume([t], S.mix[k].vol); }
+        if (t) { api.changeTrackMute([t], S.mix[k].mute); api.changeTrackSolo([t], S.mix[k].solo); api.changeTrackVolume([t], trackVol(t)); }
         refreshTrackUI();
       }
       else if (it.id === 'test') endKeyTest();
@@ -2379,6 +2398,7 @@
   }
   function updateDisk() {
     document.body.classList.toggle('no-song', !S.score);   // sem música: some o que não tem uso
+    syncFocus();
     updateFavBtn();
     const n = S.score ? pendingChanges().length : 0, b = $('btnApply');
     b.classList.toggle('on', n > 0); $('applyN').textContent = n ? String(n) : '';

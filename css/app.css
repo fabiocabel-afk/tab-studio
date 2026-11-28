@@ -785,3 +785,9 @@ body.inst-fs #toast { z-index: 2600; }
 input[type=range].eq { --lo: 50%; --hi: 50%; --fill: var(--brand2); }
 input[type=range].eq::-webkit-slider-runnable-track { background: linear-gradient(90deg, var(--track) 0 var(--lo), var(--fill) var(--lo) var(--hi), var(--track) var(--hi) 100%), var(--track); }
 input[type=range].eq::-moz-range-progress { background: transparent; }
+/* ---------- v2.11: destacar o instrumento da tela ---------- */
+.tn-hint { font-size: 12px; color: var(--tx2); line-height: 1.4; margin-top: -4px; }
+.focus-lvl button { flex-direction: column; gap: 0; height: 42px; line-height: 1.15; }
+.focus-lvl button small { font-size: 11px; font-weight: 600; opacity: .85; }
+.focus-lvl.off { opacity: .45; }
+.focus-lvl.off button { cursor: default; }
