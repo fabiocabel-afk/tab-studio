@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '2.11.1';
+  const APP_VERSION = '2.11.2';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Tr = window.makeTranspose(at);   // tom do conjunto (js/transpose.js)
@@ -2450,6 +2450,8 @@
   $('wDemo').onclick = openDemo;
   $('wRecent').onclick = recentDialog;
   $('wFavs').onclick = () => Rep.openLibrary('favs');
+  // janela Músicas: o mesmo "Abrir arquivo" do menu, fixo no rodapé (em todas as guias)
+  $('libOpenFile').onclick = () => { $('dlgLib').close(); $('fileInput').click(); };
   $('btnFav').onclick = toggleFavCurrent;
   loadFavIds();
   updateRecentButton();
