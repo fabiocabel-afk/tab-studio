@@ -736,3 +736,19 @@ body.inst-fs #toast { z-index: 2600; }
 .vol-mute { width: 100%; height: 34px; padding: 0 6px; font-size: 12px; gap: 4px; justify-content: center; }
 .vol-mute svg.i { width: 16px; height: 16px; }
 .vol-btn.on { background: var(--brand); color: #fff; }
+/* ---------- v2.9: som realista ---------- */
+.sound-info { font-size: 12px; margin-top: -6px; line-height: 1.4; }
+.sound-info:empty { display: none; }
+.sf-prog { display: block; height: 6px; border-radius: 3px; background: var(--surf3); overflow: hidden; margin: 2px 0 6px; }
+.sf-prog i { display: block; height: 100%; background: linear-gradient(90deg, #642A90, #a45fd8); transition: width .2s; }
+.linkish { background: none; border: 0; padding: 0; color: var(--pri-tx); font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
+/* ---------- v2.9.1: versão no topo do menu e na tela inicial; menu rola se não couber ---------- */
+#menuMore { max-height: calc(100dvh - 70px); overflow-y: auto; overscroll-behavior: contain; }
+.menu-head { position: sticky; top: -4px; z-index: 1; background: var(--surf); }
+.menu-head .menu-ver { border: 0; margin: 0 0 0 auto; padding: 0 4px 0 0; font-size: 12px; color: var(--tx2); text-align: right; white-space: nowrap; }
+.welcome-ver { margin: -6px 0 6px; font-size: 13px; font-weight: 700; color: var(--tx2); letter-spacing: .02em; }
+.welcome-card .welcome-txt { font-size: 13.5px; line-height: 1.45; color: var(--tx2); max-width: 420px; margin-left: auto; margin-right: auto; }
+.menu-head { align-self: stretch; width: 100%; box-sizing: border-box; justify-content: flex-start; }
+.menu-head .pop-x { margin-left: 6px; }
+.menu .menu-head .pop-x { width: 32px; height: 32px; padding: 0; justify-content: center; margin-left: auto; flex: none; border-radius: 10px; }
+.menu .menu-head .menu-ver { margin-left: 8px; }

@@ -106,7 +106,7 @@
 
   <!-- Menu "Mais" -->
   <div class="menu" id="menuMore" hidden>
-    <div class="pop-head menu-head"><b>Menu</b><button type="button" class="x pop-x" data-popclose title="Fechar"><svg class="i" aria-hidden="true"><use href="#i-close"/></svg></button></div>
+    <div class="pop-head menu-head"><b>Menu</b><span class="menu-ver" id="menuVer"></span><button type="button" class="x pop-x" data-popclose title="Fechar"><svg class="i" aria-hidden="true"><use href="#i-close"/></svg></button></div>
     <button data-act="open"><svg class="i" aria-hidden="true"><use href="#i-folder"/></svg><span>Abrir arquivo…</span><kbd>Ctrl+O</kbd></button>
     <button data-act="recent"><svg class="i" aria-hidden="true"><use href="#i-clock"/></svg><span>Arquivos recentes</span></button>
     <button data-act="new"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg><span>Nova música</span></button>
@@ -125,7 +125,6 @@
     <button data-act="info"><svg class="i" aria-hidden="true"><use href="#i-info"/></svg><span>Informações da música</span></button>
     <button data-act="shortcuts"><svg class="i" aria-hidden="true"><use href="#i-keyboard"/></svg><span>Atalhos do editor</span></button>
     <button data-act="about"><svg class="i" aria-hidden="true"><use href="#i-help"/></svg><span>Sobre</span></button>
-    <div class="menu-ver" id="menuVer"></div>
   </div>
 
   <!-- Testar tom (player) -->
@@ -157,6 +156,13 @@
     </label>
     <label class="chk"><input type="checkbox" id="chkFollow" checked> Rolar acompanhando o cursor</label>
     <div class="tune-info" id="tuneInfo" hidden></div>
+    <label title="Banco de sons usado para tocar a música">Som
+      <select id="selSound">
+        <option value="lite">Leve (já incluso, abre na hora)</option>
+        <option value="real">Realista (baixa uma vez, cerca de 10 MB)</option>
+      </select>
+    </label>
+    <div class="sound-info muted" id="soundInfo"></div>
     <label title="Como as bolinhas coloridas das trilhas (na lista de trilhas) acendem">Bolinhas das trilhas
       <select id="selDotGlow">
         <option value="bar">Acendem por compasso</option>
@@ -183,7 +189,8 @@
         <div class="welcome-card">
           <div class="logo-big"><svg viewBox="0 0 24 24" width="44" height="44" aria-hidden="true"><path fill="#fff" opacity=".5" d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/><circle cx="9" cy="7" r="2.6" fill="#FF9901"/><circle cx="15" cy="12" r="2.6" fill="#fff"/><circle cx="7" cy="17" r="2.6" fill="#99CC33"/></svg></div>
           <h1>Tab Studio</h1>
-          <p>Abra tablaturas do Guitar Pro (GP3, GP4, GP5, GPX, GP7/8) ou MusicXML, toque, edite, componha e imprima — tudo no navegador, funcionando offline.</p>
+          <div class="welcome-ver" id="welcomeVer"></div>
+          <p class="welcome-txt">Abra tablaturas do Guitar Pro (GP3, GP4, GP5, GPX, GP7/8) ou MusicXML, toque, edite, componha e imprima — tudo no navegador, funcionando offline.</p>
           <div class="welcome-actions">
             <button class="btn big primary" id="wOpen"><svg class="i" aria-hidden="true"><use href="#i-folder"/></svg>Abrir arquivo</button>
             <button class="btn big" id="wRecent"><svg class="i" aria-hidden="true"><use href="#i-clock"/></svg><span>Recentes</span></button>

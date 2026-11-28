@@ -1,5 +1,5 @@
 /* Tab Studio — service worker (offline). Troque CACHE a cada versão. */
-const CACHE = 'tabstudio-v2.8.4';
+const CACHE = 'tabstudio-v2.9.1';
 const ASSETS = [
   './', './index.html', './css/app.css', './manifest.webmanifest',
   './js/app.js', './js/tabops.js', './js/store.js', './js/wake.js', './js/csel.js', './js/rep.js', './js/backup.js', './js/fullview.js', './js/transpose.js', './js/trackbar.js', './js/fretboard3d.js', './js/fretboard2d.js', './js/keyboard2d.js', './js/keyboard3d.js', './js/pianokeys.js', './js/drumkit.js', './js/drums2d.js', './js/drums3d.js', './js/drumlook.js',
@@ -17,6 +17,8 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
+  // som realista: fica guardado pelo próprio app (IndexedDB), não duplica aqui
+  if (/\/soundfont\/(GeneralUser|generaluser)/.test(req.url)) return;
   e.respondWith(
     caches.match(req, { ignoreSearch: true }).then(hit => hit || fetch(req).then(res => {
       if (res.ok && res.type === 'basic') { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); }

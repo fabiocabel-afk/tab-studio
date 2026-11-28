@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '2.8.4';
+  const APP_VERSION = '2.9.1';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Tr = window.makeTranspose(at);   // tom do conjunto (js/transpose.js)
@@ -85,6 +85,85 @@
     api.scoreLoaded.on(() => setTimeout(loadSf, 0));
     api.playerReady.on(loadSf);
   }
+  /* ---------------- som: Leve (sonivox, 1 MB, já incluso) ou Realista (GeneralUser GS, ~10 MB, baixado uma vez) ---------------- */
+  const SOUND = { cur: 'lite', busy: false, liteBytes: null, resume: false };
+  async function liteBytes() {
+    if (SOUND.liteBytes) return SOUND.liteBytes;
+    if (window.TABSTUDIO_SF_B64) SOUND.liteBytes = Uint8Array.from(atob(window.TABSTUDIO_SF_B64), c => c.charCodeAt(0));
+    else SOUND.liteBytes = new Uint8Array(await (await fetch(new URL('soundfont/sonivox.sf3', location.href).href)).arrayBuffer());
+    return SOUND.liteBytes;
+  }
+  // baixa o som realista (com progresso) — no link de visualização ele vem num arquivo .js
+  async function downloadReal(onProg) {
+    if (window.TABSTUDIO_SFR_SRC) {
+      if (!window.TABSTUDIO_SFR_B64) await new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = window.TABSTUDIO_SFR_SRC; sc.onload = ok; sc.onerror = () => no(new Error('não foi possível baixar')); document.head.appendChild(sc); onProg(0.5); });
+      const b = Uint8Array.from(atob(window.TABSTUDIO_SFR_B64), c => c.charCodeAt(0)); window.TABSTUDIO_SFR_B64 = null; onProg(1); return b;
+    }
+    const res = await fetch(new URL('soundfont/GeneralUser-GS.sf3', location.href).href, { cache: 'no-store' });
+    if (!res.ok) throw new Error('o servidor respondeu ' + res.status);
+    const total = +res.headers.get('content-length') || 0;
+    if (!res.body || !total) { const b = new Uint8Array(await res.arrayBuffer()); onProg(1); return b; }
+    const rd = res.body.getReader(), out = new Uint8Array(total); let got = 0;
+    for (;;) { const { done, value } = await rd.read(); if (done) break; out.set(value, got); got += value.length; onProg(got / total); }
+    if (got !== total) throw new Error('o download veio incompleto');
+    return out;
+  }
+  const isSf = b => b && b.length > 1000 && b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b[8] === 0x73 && b[9] === 0x66 && b[10] === 0x62 && b[11] === 0x6b;
+  function soundInfo(t) { const el = $('soundInfo'); if (el) el.innerHTML = t || ''; }
+  async function realInfo() {
+    let b = null; try { b = await Store.get('sfReal'); } catch (e) { b = null; }
+    if (SOUND.busy) return;
+    if (prefs.sound === 'real') soundInfo(b ? 'Som realista guardado no aparelho (' + fmtSize(b.length) + '), funciona sem internet.' : '');
+    else soundInfo(b ? 'O som realista está guardado (' + fmtSize(b.length) + '). <button type="button" class="linkish" id="sfDel">Apagar do aparelho</button>' : '');
+    const del = $('sfDel'); if (del) del.onclick = async e => { e.stopPropagation(); try { await Store.del('sfReal'); toast('Som realista apagado do aparelho'); } catch (err) { toast('Não foi possível apagar', 'err'); } realInfo(); };
+  }
+  function loadSf(bytes, which) {
+    SOUND.resume = S.playing;
+    if (S.playing) api.pause();
+    SOUND.pending = which;
+    api.loadSoundFont(bytes, false);
+  }
+  async function setSound(which, user) {
+    if (SOUND.busy) return;
+    if (which === 'real') {
+      let b = null; try { b = await Store.get('sfReal'); } catch (e) { b = null; }
+      if (!isSf(b)) {
+        if (!user) { prefs.sound = 'lite'; savePrefs(); $('selSound').value = 'lite'; realInfo(); return; }
+        SOUND.busy = true; $('selSound').disabled = true;
+        const prog = f => { const p = Math.round(f * 100); soundInfo('<b class="sf-prog"><i style="width:' + p + '%"></i></b>Baixando o som realista… ' + p + '%'); $('plStatus').textContent = 'Baixando som realista… ' + p + '%'; };
+        prog(0);
+        try {
+          b = await downloadReal(prog);
+          if (!isSf(b)) throw new Error('o arquivo baixado não é um banco de sons');
+          try { await Store.set('sfReal', b); } catch (e) { toast('Não deu para guardar no aparelho (pouco espaço): o som realista vale só até fechar o app', 'err', 6000); }
+          if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => { /* sem suporte */ });
+        } catch (e) {
+          SOUND.busy = false; $('selSound').disabled = false; $('selSound').value = 'lite'; prefs.sound = 'lite'; savePrefs();
+          $('plStatus').textContent = S.playing ? 'Tocando' : 'Pronto';
+          showMsg('Som realista não baixado', 'Não foi possível baixar o som realista: ' + esc(e.message || e) + '.<br>Continua com o som leve. Tente de novo com internet (de preferência Wi-Fi).');
+          realInfo(); return;
+        }
+        SOUND.busy = false; $('selSound').disabled = false;
+      }
+      prefs.sound = 'real'; savePrefs();
+      loadSf(b, 'real');
+    } else {
+      prefs.sound = 'lite'; savePrefs();
+      if (SOUND.cur !== 'lite') loadSf(await liteBytes(), 'lite');
+    }
+    realInfo();
+  }
+  api.soundFontLoaded.on(() => {
+    if (SOUND.pending) {
+      SOUND.cur = SOUND.pending; SOUND.pending = null;
+      toast(SOUND.cur === 'real' ? 'Som realista ligado' : 'Som leve ligado', 'ok');
+      if (SOUND.resume) { SOUND.resume = false; setTimeout(() => api.play(), 150); }
+      return;
+    }
+    // o som leve do início acabou de carregar: se a pessoa usa o realista, troca agora
+    if (prefs.sound === 'real' && SOUND.cur === 'lite' && !SOUND.started) { SOUND.started = true; setSound('real', false); }
+  });
+
   /* ---------------- utilidades ---------------- */
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
   let toastT = 0;
@@ -709,6 +788,9 @@
     selectTrack(i);
     toast(S.score.tracks[i].name.trim() || 'Trilha ' + (i + 1));
   }
+  $('selSound').value = prefs.sound === 'real' ? 'real' : 'lite';
+  $('selSound').onchange = () => setSound($('selSound').value, true);
+  realInfo();
   $('selDotGlow').value = prefs.dotGlow === 'note' ? 'note' : 'bar';
   $('selDotGlow').onchange = () => { prefs.dotGlow = $('selDotGlow').value; savePrefs(); };
   $('chkSkipEmpty').checked = prefs.skipEmpty !== false;
@@ -1531,7 +1613,7 @@
     showMsg('Atalhos do editor', '<table>' + rows.map(r => '<tr><td><kbd>' + r[0] + '</kbd></td><td>' + r[1] + '</td></tr>').join('') + '</table>');
   }
   function aboutDialog() {
-    showMsg('Sobre o Tab Studio', 'Versão ' + APP_VERSION + '.<br>Leitura, reprodução, impressão e edição de tablaturas e partituras no navegador, funcionando offline.<br><br>Formatos de leitura: Guitar Pro 3, 4, 5 (.gp3/.gp4/.gp5), 6 (.gpx), 7 e 8 (.gp), MusicXML, Capella e alphaTex.<br>Formato de gravação: Guitar Pro 7/8 (.gp) e MIDI.<br><br><span class="muted">Motor de notação: alphaTab (MPL-2.0). Fonte musical: Bravura (SIL OFL). Sons: SoundFont Sonivox. 3D: three.js (MIT). Guitarra Les Paul 3D: "Generic Les Paul Guitar", de simonrepp (Blend Swap, CC0). Bateria 3D: "Rack Drum Set" (Blend Swap #85792, CC0), só a geometria, com cores próprias.</span>');
+    showMsg('Sobre o Tab Studio', 'Versão ' + APP_VERSION + '.<br>Leitura, reprodução, impressão e edição de tablaturas e partituras no navegador, funcionando offline.<br><br>Formatos de leitura: Guitar Pro 3, 4, 5 (.gp3/.gp4/.gp5), 6 (.gpx), 7 e 8 (.gp), MusicXML, Capella e alphaTex.<br>Formato de gravação: Guitar Pro 7/8 (.gp) e MIDI.<br><br><span class="muted">Motor de notação: alphaTab (MPL-2.0). Fonte musical: Bravura (SIL OFL). Sons: SoundFont Sonivox (Leve) e GeneralUser GS, de S. Christian Collins (Realista). 3D: three.js (MIT). Guitarra Les Paul 3D: "Generic Les Paul Guitar", de simonrepp (Blend Swap, CC0). Bateria 3D: "Rack Drum Set" (Blend Swap #85792, CC0), só a geometria, com cores próprias.</span>');
   }
 
   /* ---------------- instrumento na tela (braço/teclado, 2D/3D) ---------------- */
@@ -2226,7 +2308,8 @@
   $('btnView').onclick = e => { e.stopPropagation(); const m = $('viewPanel'); closePopups('viewPanel'); m.hidden = !m.hidden; $('btnView').classList.toggle('on', !m.hidden); };
   $('viewPanel').onclick = e => e.stopPropagation();
   document.addEventListener('click', () => closePopups());
-  $('menuVer').textContent = 'Tab Studio · versão ' + APP_VERSION;
+  $('menuVer').textContent = 'versão ' + APP_VERSION;
+  $('welcomeVer').textContent = 'versão ' + APP_VERSION;
   $('menuMore').onclick = e => {
     const b = e.target.closest('[data-act]'); if (!b) return;
     const act = b.dataset.act;
@@ -2332,7 +2415,7 @@
   checkDraft();
 
   // ganchos para testes automatizados
-  window.TabStudio = { backup: Backup, fullView: FullView,
+  window.TabStudio = { backup: Backup, fullView: FullView, sound: SOUND, setSound,
     version: APP_VERSION, api, Ops, state: S,
     loadBytes, setScore, getRecent, saveAsFile, downloadFile, rep: Rep, captureSettings, gcFile, openRecent, recentDialog, selectTrack, setVizMode, openLoopPanel, applyLoop, loopOff, setSpeed, seekToBar, setRangeBars, tbar, Wake: window.TabWake, zipStore, exportMidi, buildDemo, openDemo, toggleEdit, toggle3d, edAction, edSetFret, saveGp, undo, redo, commit, drawCursor, updateDisk, pendingChanges, stepNote, beatsAtTick
   };
