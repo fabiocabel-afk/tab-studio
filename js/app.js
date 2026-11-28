@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '2.9.1';
+  const APP_VERSION = '2.9.2';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Tr = window.makeTranspose(at);   // tom do conjunto (js/transpose.js)
@@ -99,13 +99,24 @@
       if (!window.TABSTUDIO_SFR_B64) await new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = window.TABSTUDIO_SFR_SRC; sc.onload = ok; sc.onerror = () => no(new Error('não foi possível baixar')); document.head.appendChild(sc); onProg(0.5); });
       const b = Uint8Array.from(atob(window.TABSTUDIO_SFR_B64), c => c.charCodeAt(0)); window.TABSTUDIO_SFR_B64 = null; onProg(1); return b;
     }
-    const res = await fetch(new URL('soundfont/GeneralUser-GS.sf3', location.href).href, { cache: 'no-store' });
-    if (!res.ok) throw new Error('o servidor respondeu ' + res.status);
-    const total = +res.headers.get('content-length') || 0;
-    if (!res.body || !total) { const b = new Uint8Array(await res.arrayBuffer()); onProg(1); return b; }
-    const rd = res.body.getReader(), out = new Uint8Array(total); let got = 0;
-    for (;;) { const { done, value } = await rd.read(); if (done) break; out.set(value, got); got += value.length; onProg(got / total); }
-    if (got !== total) throw new Error('o download veio incompleto');
+    const url = new URL('soundfont/GeneralUser-GS.sf3', location.href).href;
+    let res;
+    try { res = await fetch(url, { cache: 'no-store' }); }
+    catch (e) { throw new Error('sem conexão com o servidor do app'); }
+    if (!res.ok) throw new Error(res.status === 404 ? 'o arquivo ainda não está no servidor (a atualização pode levar alguns minutos para chegar)' : 'o servidor respondeu ' + res.status);
+    // tamanho esperado do arquivo (a rede pode comprimir no caminho: aí o "tamanho" do cabeçalho não bate com o que chega)
+    const enc = (res.headers.get('content-encoding') || '').toLowerCase();
+    const total = enc && enc !== 'identity' ? 0 : (+res.headers.get('content-length') || 0);
+    if (!res.body) { const b = new Uint8Array(await res.arrayBuffer()); onProg(1); return b; }
+    const rd = res.body.getReader(), parts = []; let got = 0;
+    for (;;) {
+      const { done, value } = await rd.read(); if (done) break;
+      parts.push(value); got += value.length;
+      onProg(total ? Math.min(0.99, got / total) : Math.min(0.95, got / 9.8e6));
+    }
+    const out = new Uint8Array(got); let o = 0; for (const p of parts) { out.set(p, o); o += p.length; }
+    if (total && got < total) throw new Error('o download foi interrompido (chegaram ' + fmtSize(got) + ' de ' + fmtSize(total) + ')');
+    onProg(1);
     return out;
   }
   const isSf = b => b && b.length > 1000 && b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b[8] === 0x73 && b[9] === 0x66 && b[10] === 0x62 && b[11] === 0x6b;
@@ -121,27 +132,45 @@
     SOUND.resume = S.playing;
     if (S.playing) api.pause();
     SOUND.pending = which;
-    api.loadSoundFont(bytes, false);
+    let okLoad = false;
+    try { okLoad = api.loadSoundFont(bytes, false); } catch (e) { okLoad = false; }
+    // sem música aberta o tocador ainda não existe: guarda para ligar assim que ele ficar pronto
+    if (okLoad === false) { SOUND.queued = { bytes, which }; SOUND.pending = null; toast(which === 'real' ? 'Som realista pronto: liga quando você abrir uma música' : 'Som leve escolhido', 'ok'); }
   }
+  api.playerReady.on(() => { if (SOUND.queued) { const q = SOUND.queued; SOUND.queued = null; SOUND.started = true; setTimeout(() => loadSf(q.bytes, q.which), 0); } });
   async function setSound(which, user) {
     if (SOUND.busy) return;
     if (which === 'real') {
       let b = null; try { b = await Store.get('sfReal'); } catch (e) { b = null; }
       if (!isSf(b)) {
         if (!user) { prefs.sound = 'lite'; savePrefs(); $('selSound').value = 'lite'; realInfo(); return; }
+        // dados móveis / economia de dados: pergunta antes (nunca bloqueia)
+        const cn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+        if (cn && (cn.type === 'cellular' || cn.saveData)) {
+          const go = await showMsg('Baixar pelos dados móveis?', 'Você está ' + (cn.saveData ? 'com a <b>economia de dados</b> ligada' : 'usando os <b>dados móveis</b>') + '. O som realista tem cerca de <b>10 MB</b> e é baixado só uma vez; depois fica guardado no aparelho.',
+            [{ label: 'Agora não', value: 'no' }, { label: 'Baixar pelos dados móveis', value: 'yes', primary: true }]);
+          if (go !== 'yes') { $('selSound').value = SOUND.cur === 'real' ? 'real' : 'lite'; if (SOUND.cur !== 'real') { prefs.sound = 'lite'; savePrefs(); } realInfo(); return; }
+        }
         SOUND.busy = true; $('selSound').disabled = true;
         const prog = f => { const p = Math.round(f * 100); soundInfo('<b class="sf-prog"><i style="width:' + p + '%"></i></b>Baixando o som realista… ' + p + '%'); $('plStatus').textContent = 'Baixando som realista… ' + p + '%'; };
         prog(0);
         try {
           b = await downloadReal(prog);
+          // chegou ainda comprimido (gzip) por alguma rede/proxy: descomprime aqui
+          if (!isSf(b) && b && b[0] === 0x1f && b[1] === 0x8b && 'DecompressionStream' in window) {
+            try { b = new Uint8Array(await new Response(new Blob([b]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer()); } catch (e) { /* segue para o aviso */ }
+          }
           if (!isSf(b)) throw new Error('o arquivo baixado não é um banco de sons');
           try { await Store.set('sfReal', b); } catch (e) { toast('Não deu para guardar no aparelho (pouco espaço): o som realista vale só até fechar o app', 'err', 6000); }
           if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => { /* sem suporte */ });
         } catch (e) {
           SOUND.busy = false; $('selSound').disabled = false; $('selSound').value = 'lite'; prefs.sound = 'lite'; savePrefs();
           $('plStatus').textContent = S.playing ? 'Tocando' : 'Pronto';
-          showMsg('Som realista não baixado', 'Não foi possível baixar o som realista: ' + esc(e.message || e) + '.<br>Continua com o som leve. Tente de novo com internet (de preferência Wi-Fi).');
-          realInfo(); return;
+          realInfo();
+          const again = await showMsg('Som realista não baixado', 'Não foi possível baixar o som realista: ' + esc(e.message || e) + '.<br>Por enquanto continua com o som leve.',
+            [{ label: 'Fechar', value: 'no' }, { label: 'Tentar de novo', value: 'retry', primary: true }]);
+          if (again === 'retry') { $('selSound').value = 'real'; setSound('real', true); }
+          return;
         }
         SOUND.busy = false; $('selSound').disabled = false;
       }
@@ -161,6 +190,7 @@
       return;
     }
     // o som leve do início acabou de carregar: se a pessoa usa o realista, troca agora
+    if (SOUND.queued) { const q = SOUND.queued; SOUND.queued = null; SOUND.started = true; loadSf(q.bytes, q.which); return; }
     if (prefs.sound === 'real' && SOUND.cur === 'lite' && !SOUND.started) { SOUND.started = true; setSound('real', false); }
   });
 
