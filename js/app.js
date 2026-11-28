@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '2.9.2';
+  const APP_VERSION = '2.10.0';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Tr = window.makeTranspose(at);   // tom do conjunto (js/transpose.js)
@@ -23,6 +23,37 @@
     const t = S.score ? S.score.tracks[S.primary] : null;
     return !t || neckable(t) ? 'TabRhythm' : 'Score';
   }
+  /* timbre: equalizador geral (ao vivo) + ajuste por grupo de instrumento (no banco de sons, js/sfedit.js) */
+  const TONE_KEYS = ['b', 'm', 't', 'dist', 'clean', 'bass', 'keys', 'kick', 'cym'];
+  const TONE_PRESETS = { nat: {}, gtr: { t: -2, dist: 60, clean: 30 }, drm: { b: -3, kick: 50, cym: 30 }, full: { b: 3, m: 1, t: -3, dist: 30 } };
+  const EQ = { nodes: new WeakMap(), all: [] };
+  function eqGain(k) { const v = prefs.tone && +prefs.tone[k] || 0; return Math.max(-12, Math.min(12, v)); }
+  // o som do tocador passa pelo equalizador antes de chegar no alto-falante
+  (function hookAudio() {
+    if (!window.AudioNode || AudioNode.prototype.__tsEq) return;
+    const orig = AudioNode.prototype.connect;
+    AudioNode.prototype.__tsEq = true;
+    AudioNode.prototype.connect = function (dest, ...rest) {
+      try {
+        const ctx = this.context;
+        const fromPlayer = (window.AudioWorkletNode && this instanceof AudioWorkletNode) || (window.ScriptProcessorNode && this instanceof ScriptProcessorNode);
+        if (fromPlayer && ctx && dest === ctx.destination) {
+          let ch = EQ.nodes.get(ctx);
+          if (!ch) {
+            const lo = ctx.createBiquadFilter(); lo.type = 'lowshelf'; lo.frequency.value = 220;
+            const mid = ctx.createBiquadFilter(); mid.type = 'peaking'; mid.frequency.value = 1000; mid.Q.value = 0.9;
+            const hi = ctx.createBiquadFilter(); hi.type = 'highshelf'; hi.frequency.value = 3800;
+            orig.call(lo, mid); orig.call(mid, hi); orig.call(hi, ctx.destination);
+            ch = { lo, mid, hi }; EQ.nodes.set(ctx, ch); EQ.all.push(ch);
+            setEq();
+          }
+          return orig.call(this, ch.lo, ...rest);
+        }
+      } catch (e) { /* sem equalizador: segue direto */ }
+      return orig.call(this, dest, ...rest);
+    };
+  })();
+  function setEq() { for (const c of EQ.all) { c.lo.gain.value = eqGain('b'); c.mid.gain.value = eqGain('m'); c.hi.gain.value = eqGain('t'); } }
   function readPrefs() { try { return JSON.parse(localStorage.getItem(PREF_KEY) || '{}'); } catch (e) { return {}; } }
   function savePrefs() { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch (e) { /* armazenamento indisponível */ } }
 
@@ -86,7 +117,7 @@
     api.playerReady.on(loadSf);
   }
   /* ---------------- som: Leve (sonivox, 1 MB, já incluso) ou Realista (GeneralUser GS, ~10 MB, baixado uma vez) ---------------- */
-  const SOUND = { cur: 'lite', busy: false, liteBytes: null, resume: false };
+  const SOUND = { cur: 'lite', busy: false, liteBytes: null, resume: false, toneKey: '{"dist":0,"clean":0,"bass":0,"keys":0,"kick":0,"cym":0}' };
   async function liteBytes() {
     if (SOUND.liteBytes) return SOUND.liteBytes;
     if (window.TABSTUDIO_SF_B64) SOUND.liteBytes = Uint8Array.from(atob(window.TABSTUDIO_SF_B64), c => c.charCodeAt(0));
@@ -128,14 +159,27 @@
     else soundInfo(b ? 'O som realista está guardado (' + fmtSize(b.length) + '). <button type="button" class="linkish" id="sfDel">Apagar do aparelho</button>' : '');
     const del = $('sfDel'); if (del) del.onclick = async e => { e.stopPropagation(); try { await Store.del('sfReal'); toast('Som realista apagado do aparelho'); } catch (err) { toast('Não foi possível apagar', 'err'); } realInfo(); };
   }
-  function loadSf(bytes, which) {
+  // ajuste por instrumento aplicado ao banco (sem ajuste = o próprio arquivo)
+  function instTone() { const t = prefs.tone || {}; const o = {}; ['dist', 'clean', 'bass', 'keys', 'kick', 'cym'].forEach(k => { o[k] = +t[k] || 0; }); return o; }
+  const toneKey = () => JSON.stringify(instTone());
+  function toned(bytes) { try { return window.TabSfEdit ? window.TabSfEdit.apply(bytes, instTone()) : bytes; } catch (e) { console.error(e); return bytes; } }
+  function loadSf(bytes, which, why) {
+    SOUND.why = why || '';
+    SOUND.toneKey = toneKey();
+    SOUND.rawQueued = bytes;
+    bytes = toned(bytes);
     SOUND.resume = S.playing;
     if (S.playing) api.pause();
     SOUND.pending = which;
     let okLoad = false;
     try { okLoad = api.loadSoundFont(bytes, false); } catch (e) { okLoad = false; }
     // sem música aberta o tocador ainda não existe: guarda para ligar assim que ele ficar pronto
-    if (okLoad === false) { SOUND.queued = { bytes, which }; SOUND.pending = null; toast(which === 'real' ? 'Som realista pronto: liga quando você abrir uma música' : 'Som leve escolhido', 'ok'); }
+    if (okLoad === false) {
+      SOUND.queued = { bytes: SOUND.rawQueued, which }; SOUND.pending = null;
+      const bz = $('tnBusy'); if (bz) bz.textContent = '';
+      if (why === 'tone') toast('Timbre guardado: vale assim que você abrir uma música', 'ok');
+      else if (why !== 'start') toast(which === 'real' ? 'Som realista pronto: liga quando você abrir uma música' : 'Som leve escolhido', 'ok');
+    }
   }
   api.playerReady.on(() => { if (SOUND.queued) { const q = SOUND.queued; SOUND.queued = null; SOUND.started = true; setTimeout(() => loadSf(q.bytes, q.which), 0); } });
   async function setSound(which, user) {
@@ -185,13 +229,16 @@
   api.soundFontLoaded.on(() => {
     if (SOUND.pending) {
       SOUND.cur = SOUND.pending; SOUND.pending = null;
-      toast(SOUND.cur === 'real' ? 'Som realista ligado' : 'Som leve ligado', 'ok');
+      if (SOUND.why === 'tone') { const b = $('tnBusy'); if (b) b.textContent = ''; toast('Timbre aplicado', 'ok'); }
+      else if (SOUND.why !== 'start') toast(SOUND.cur === 'real' ? 'Som realista ligado' : 'Som leve ligado', 'ok');
       if (SOUND.resume) { SOUND.resume = false; setTimeout(() => api.play(), 150); }
       return;
     }
     // o som leve do início acabou de carregar: se a pessoa usa o realista, troca agora
     if (SOUND.queued) { const q = SOUND.queued; SOUND.queued = null; SOUND.started = true; loadSf(q.bytes, q.which); return; }
-    if (prefs.sound === 'real' && SOUND.cur === 'lite' && !SOUND.started) { SOUND.started = true; setSound('real', false); }
+    if (prefs.sound === 'real' && SOUND.cur === 'lite' && !SOUND.started) { SOUND.started = true; setSound('real', false); return; }
+    // som leve com ajuste por instrumento guardado: recarrega já ajustado
+    if (!SOUND.started) { SOUND.started = true; if (toneKey() !== SOUND.toneKey && Object.values(instTone()).some(v => v > 0)) liteBytes().then(b => loadSf(b, 'lite', 'start')); }
   });
 
   /* ---------------- utilidades ---------------- */
@@ -819,8 +866,63 @@
     toast(S.score.tracks[i].name.trim() || 'Trilha ' + (i + 1));
   }
   $('selSound').value = prefs.sound === 'real' ? 'real' : 'lite';
-  $('selSound').onchange = () => setSound($('selSound').value, true);
+  $('selSound').onchange = () => { syncBank(); setSound($('selSound').value, true); };
   realInfo();
+  /* painel do olho: abas Visual / Som */
+  document.querySelectorAll('[data-vtab]').forEach(b => b.onclick = e => {
+    e.stopPropagation(); prefs.vtab = b.dataset.vtab; savePrefs(); showVtab();
+  });
+  function showVtab() {
+    const t = prefs.vtab === 'som' ? 'som' : 'visual';
+    document.querySelectorAll('[data-vtab]').forEach(b => { b.classList.toggle('on', b.dataset.vtab === t); b.setAttribute('aria-selected', b.dataset.vtab === t); });
+    document.querySelectorAll('[data-vpage]').forEach(p => { p.hidden = p.dataset.vpage !== t; });
+  }
+  showVtab();
+  // banco de sons: botão de duas posições (por baixo continua o select, que guarda a escolha)
+  function syncBank() { const v = $('selSound').value; document.querySelectorAll('#sndBank button').forEach(b => b.classList.toggle('on', b.dataset.v === v)); }
+  document.querySelectorAll('#sndBank button').forEach(b => b.onclick = e => {
+    e.stopPropagation(); if ($('selSound').disabled || $('selSound').value === b.dataset.v) return;
+    $('selSound').value = b.dataset.v; $('selSound').dispatchEvent(new Event('change'));
+  });
+  setInterval(syncBank, 700); syncBank();
+  /* timbre: números sempre à mostra, para a pessoa saber voltar à mesma regulagem */
+  if (!prefs.tone || typeof prefs.tone !== 'object') prefs.tone = {};
+  const dbTxt = v => (v > 0 ? '+' + v : v < 0 ? '−' + Math.abs(v) : '0') + ' dB';
+  function paintEq(el) { const p = (+el.value + 12) / 24 * 100; el.style.setProperty('--lo', Math.min(50, p) + '%'); el.style.setProperty('--hi', Math.max(50, p) + '%'); }
+  function showTone() {
+    const t = prefs.tone;
+    [['B', 'b'], ['M', 'm'], ['T', 't']].forEach(([id, k]) => { const el = $('eq' + id), v = +t[k] || 0; el.value = v; $('eq' + id + 'V').textContent = dbTxt(v); paintEq(el); });
+    document.querySelectorAll('input.tg').forEach(el => { const v = +t[el.dataset.k] || 0; el.value = v; $(el.id + 'V').textContent = v + '%'; paintRange(el); });
+    const cur = TONE_KEYS.map(k => +t[k] || 0).join();
+    document.querySelectorAll('#toneChips button').forEach(b => b.classList.toggle('on', TONE_KEYS.map(k => +TONE_PRESETS[b.dataset.p][k] || 0).join() === cur));
+  }
+  let toneT = 0;
+  function applyInstTone() {
+    clearTimeout(toneT);
+    toneT = setTimeout(async () => {
+      if (toneKey() === SOUND.toneKey) return;
+      if (SOUND.busy) { applyInstTone(); return; }
+      const b = $('tnBusy'); if (b) b.textContent = 'aplicando…';
+      let base = null;
+      if (SOUND.cur === 'real') { try { base = await Store.get('sfReal'); } catch (e) { base = null; } }
+      if (!base) base = await liteBytes();
+      loadSf(base, SOUND.cur, 'tone');
+    }, 350);
+  }
+  [['B', 'b'], ['M', 'm'], ['T', 't']].forEach(([id, k]) => {
+    const el = $('eq' + id);
+    el.oninput = () => { prefs.tone[k] = +el.value; setEq(); showTone(); };
+    el.onchange = () => savePrefs();
+  });
+  document.querySelectorAll('input.tg').forEach(el => {
+    el.oninput = () => { prefs.tone[el.dataset.k] = +el.value; showTone(); };
+    el.onchange = () => { savePrefs(); applyInstTone(); };
+  });
+  document.querySelectorAll('#toneChips button').forEach(b => b.onclick = e => {
+    e.stopPropagation(); prefs.tone = Object.assign({}, TONE_PRESETS[b.dataset.p]); savePrefs(); setEq(); showTone(); applyInstTone();
+  });
+  $('toneReset').onclick = e => { e.stopPropagation(); prefs.tone = {}; savePrefs(); setEq(); showTone(); applyInstTone(); };
+  showTone();
   $('selDotGlow').value = prefs.dotGlow === 'note' ? 'note' : 'bar';
   $('selDotGlow').onchange = () => { prefs.dotGlow = $('selDotGlow').value; savePrefs(); };
   $('chkSkipEmpty').checked = prefs.skipEmpty !== false;
@@ -2445,7 +2547,7 @@
   checkDraft();
 
   // ganchos para testes automatizados
-  window.TabStudio = { backup: Backup, fullView: FullView, sound: SOUND, setSound,
+  window.TabStudio = { backup: Backup, fullView: FullView, sound: SOUND, setSound, eq: EQ,
     version: APP_VERSION, api, Ops, state: S,
     loadBytes, setScore, getRecent, saveAsFile, downloadFile, rep: Rep, captureSettings, gcFile, openRecent, recentDialog, selectTrack, setVizMode, openLoopPanel, applyLoop, loopOff, setSpeed, seekToBar, setRangeBars, tbar, Wake: window.TabWake, zipStore, exportMidi, buildDemo, openDemo, toggleEdit, toggle3d, edAction, edSetFret, saveGp, undo, redo, commit, drawCursor, updateDisk, pendingChanges, stepNote, beatsAtTick
   };

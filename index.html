@@ -49,6 +49,9 @@
   <symbol id="i-vol1" viewBox="0 0 24 24"><path d="M3 9h4l5-4v14l-5-4H3z"/><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="M15 10a3 3 0 0 1 0 4"/></symbol>
   <symbol id="i-vol2" viewBox="0 0 24 24"><path d="M3 9h4l5-4v14l-5-4H3z"/><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="M15 10a3 3 0 0 1 0 4M17.6 7.6a6.5 6.5 0 0 1 0 8.8"/></symbol>
   <symbol id="i-vol3" viewBox="0 0 24 24"><path d="M3 9h4l5-4v14l-5-4H3z"/><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="M15 10a3 3 0 0 1 0 4M17.6 7.6a6.5 6.5 0 0 1 0 8.8M20.2 5.2a10 10 0 0 1 0 13.6"/></symbol>
+  <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></symbol>
+  <symbol id="i-pick" viewBox="0 0 24 24"><path d="M12 2C7.5 2 4 3.6 4 6.6c0 4.2 4.6 11.4 6.6 14.2a1.7 1.7 0 0 0 2.8 0C15.4 18 20 10.8 20 6.6 20 3.6 16.5 2 12 2z"/></symbol>
+  <symbol id="i-wave" viewBox="0 0 24 24"><path d="M2 13c1.8 0 2.7-2 3.6-4S7.5 5 10 5s3.3 3 4.2 6.2 1.6 5.8 3.3 5.8c1.2 0 2-1.2 2.6-2.5l1.8.9C21 17.4 19.7 19 17.5 19c-3 0-4-3.2-4.9-6.3C11.8 9.8 11.2 7 10 7c-1.3 0-1.9 1.6-2.6 3.3C6.5 12.6 5.3 15 2 15z"/></symbol>
   <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 2.6l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.4l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="M9.5 16.2L5.3 12l-1.4 1.4 5.6 5.6L20.1 8.4 18.7 7z"/></symbol>
   <symbol id="i-flip" viewBox="0 0 24 24"><path d="M7 4l-4 4 4 4V9h10V7H7zm10 8v3H7v2h10v3l4-4z"/></symbol>
@@ -134,8 +137,11 @@
   </div>
 
   <!-- Painel de visualização -->
-  <div class="popover" id="viewPanel" hidden>
+  <div class="popover vp" id="viewPanel" hidden>
     <div class="pop-head"><b>Visualização</b><button type="button" class="x pop-x" data-popclose title="Fechar"><svg class="i" aria-hidden="true"><use href="#i-close"/></svg></button></div>
+    <div class="seg2 vp-tabs" role="tablist"><button type="button" role="tab" data-vtab="visual" class="on"><svg class="i" aria-hidden="true"><use href="#i-eye"/></svg>Visual</button><button type="button" role="tab" data-vtab="som"><svg class="i" aria-hidden="true"><use href="#i-vol2"/></svg>Som</button></div>
+    <div class="vp-page" data-vpage="visual">
+    <div class="vp-sec">Partitura</div>
     <label>Notação
       <select id="selStave">
         <option value="Auto" title="Cordas: tablatura + ritmo · Teclado, bateria e outros: partitura">Automático</option>
@@ -155,14 +161,8 @@
       <input type="range" id="rngZoom" min="50" max="200" step="10" value="100">
     </label>
     <label class="chk"><input type="checkbox" id="chkFollow" checked> Rolar acompanhando o cursor</label>
+    <div class="vp-sec">Trilhas</div>
     <div class="tune-info" id="tuneInfo" hidden></div>
-    <label title="Banco de sons usado para tocar a música">Som
-      <select id="selSound">
-        <option value="lite">Leve (já incluso, abre na hora)</option>
-        <option value="real">Realista (baixa uma vez, cerca de 10 MB)</option>
-      </select>
-    </label>
-    <div class="sound-info muted" id="soundInfo"></div>
     <label title="Como as bolinhas coloridas das trilhas (na lista de trilhas) acendem">Bolinhas das trilhas
       <select id="selDotGlow">
         <option value="bar">Acendem por compasso</option>
@@ -170,6 +170,36 @@
       </select>
     </label>
     <label class="chk" title="Com esta opção, as setas do topo pulam as trilhas que estão sem nota (só pausa) no compasso que está tocando agora"><input type="checkbox" id="chkSkipEmpty" checked> Setas ▲▼: só trilhas com notas no compasso atual</label>
+    </div>
+    <div class="vp-page" data-vpage="som" hidden>
+    <div class="vp-sec">Banco de sons</div>
+    <div class="seg2" id="sndBank"><button type="button" data-v="lite">Leve</button><button type="button" data-v="real">Realista</button></div>
+    <div hidden>
+      <select id="selSound">
+        <option value="lite">Leve (já incluso, abre na hora)</option>
+        <option value="real">Realista (baixa uma vez, cerca de 10 MB)</option>
+      </select>
+    </div>
+    <div class="sound-info muted" id="soundInfo"></div>
+    <div class="vp-sec">Atalhos</div>
+    <div class="tn-chips" id="toneChips"><button type="button" data-p="nat">Natural</button><button type="button" data-p="gtr">Guitarra mais suave</button><button type="button" data-p="drm">Bateria mais leve</button><button type="button" data-p="full">Mais encorpado</button></div>
+    <div class="vp-sec">Timbre geral <span>música toda</span></div>
+    <div class="tn-scale"><span></span><span><i>menos</i><i>0</i><i>mais</i></span><span></span></div>
+      <div class="tn-row"><label for="eqB">Graves</label><input type="range" class="eq" id="eqB" min="-12" max="12" step="1" value="0"><b id="eqBV">0 dB</b></div>
+      <div class="tn-row"><label for="eqM">Médios</label><input type="range" class="eq" id="eqM" min="-12" max="12" step="1" value="0"><b id="eqMV">0 dB</b></div>
+      <div class="tn-row"><label for="eqT">Agudos</label><input type="range" class="eq" id="eqT" min="-12" max="12" step="1" value="0"><b id="eqTV">0 dB</b></div>
+    <div class="vp-sec">Por instrumento <span id="tnBusy"></span></div>
+    <div class="tn-scale"><span></span><span><i>normal</i><i>mais suave</i></span><span></span></div>
+      <div class="tn-grp"><div class="tn-name"><svg class="i" aria-hidden="true"><use href="#i-bolt"/></svg>Guitarras distorcidas</div><div class="tn-row"><label for="tgdist">Agudos</label><input type="range" class="tg purple" id="tgdist" data-k="dist" min="0" max="100" step="5" value="0"><b id="tgdistV">0%</b></div></div>
+      <div class="tn-grp"><div class="tn-name"><svg class="i" aria-hidden="true"><use href="#i-pick"/></svg>Guitarra limpa e violão</div><div class="tn-row"><label for="tgclean">Agudos</label><input type="range" class="tg purple" id="tgclean" data-k="clean" min="0" max="100" step="5" value="0"><b id="tgcleanV">0%</b></div></div>
+      <div class="tn-grp"><div class="tn-name"><svg class="i" aria-hidden="true"><use href="#i-wave"/></svg>Baixo</div><div class="tn-row"><label for="tgbass">Agudos</label><input type="range" class="tg purple" id="tgbass" data-k="bass" min="0" max="100" step="5" value="0"><b id="tgbassV">0%</b></div></div>
+      <div class="tn-grp"><div class="tn-name"><svg class="i" aria-hidden="true"><use href="#i-keys"/></svg>Teclados, piano, cordas e sopros</div><div class="tn-row"><label for="tgkeys">Agudos</label><input type="range" class="tg purple" id="tgkeys" data-k="keys" min="0" max="100" step="5" value="0"><b id="tgkeysV">0%</b></div></div>
+      <div class="tn-grp"><div class="tn-name"><svg class="i" aria-hidden="true"><use href="#i-drum"/></svg>Bateria</div>
+      <div class="tn-row"><label for="tgkick">Bumbo</label><input type="range" class="tg purple" id="tgkick" data-k="kick" min="0" max="100" step="5" value="0"><b id="tgkickV">0%</b></div>
+      <div class="tn-row"><label for="tgcym">Pratos</label><input type="range" class="tg purple" id="tgcym" data-k="cym" min="0" max="100" step="5" value="0"><b id="tgcymV">0%</b></div>
+      <div class="tn-scale"><span></span><span><i>normal</i><i>mais leve / suave</i></span><span></span></div></div>
+    <div class="tn-foot"><button type="button" class="btn" id="toneReset"><svg class="i" aria-hidden="true"><use href="#i-undo"/></svg>Voltar ao natural</button></div>
+    </div>
   </div>
 
   <main id="main">
@@ -493,6 +523,7 @@
 <script src="js/csel.js"></script>
 <script src="js/trackbar.js"></script>
 <script src="js/transpose.js"></script>
+<script src="js/sfedit.js"></script>
 <script src="js/rep.js"></script>
 <script src="js/backup.js"></script>
 <script src="js/fullview.js"></script>
