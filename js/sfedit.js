@@ -91,7 +91,8 @@
             set(ATT, Math.min(1440, eff(ATT, 0) + Math.round(amt('cym') * 40)));
           }
         } else if (amt(grp) > 0) {
-          set(FC, lower(eff(FC, 13500), amt(grp), grp === 'bass' ? 6000 : 9000, 3));
+          // baixo: no máximo 1,5 oitava (mais que isso ele some, principalmente no alto-falante do celular)
+          set(FC, lower(eff(FC, 13500), amt(grp), grp === 'bass' ? 6000 : 9000, grp === 'bass' ? 1.5 : 3));
         }
       }
       out.push(...list);

@@ -1,7 +1,7 @@
 /* Tab Studio — aplicação principal (leitor, player, editor, ponte com o 3D). */
 (function () {
   'use strict';
-  const APP_VERSION = '2.11.0';
+  const APP_VERSION = '2.11.1';
   const at = window.alphaTab;
   const Ops = window.makeTabOps(at);
   const Tr = window.makeTranspose(at);   // tom do conjunto (js/transpose.js)
@@ -43,8 +43,11 @@
             const lo = ctx.createBiquadFilter(); lo.type = 'lowshelf'; lo.frequency.value = 220;
             const mid = ctx.createBiquadFilter(); mid.type = 'peaking'; mid.frequency.value = 1000; mid.Q.value = 0.9;
             const hi = ctx.createBiquadFilter(); hi.type = 'highshelf'; hi.frequency.value = 3800;
-            orig.call(lo, mid); orig.call(mid, hi); orig.call(hi, ctx.destination);
-            ch = { lo, mid, hi }; EQ.nodes.set(ctx, ch); EQ.all.push(ch);
+            // compensação de volume do banco (o Realista é gravado mais baixo) + limitador para os picos não distorcerem
+            const gain = ctx.createGain();
+            const lim = ctx.createDynamicsCompressor(); lim.threshold.value = -2; lim.knee.value = 0; lim.ratio.value = 20; lim.attack.value = 0.003; lim.release.value = 0.15;
+            orig.call(lo, mid); orig.call(mid, hi); orig.call(hi, gain); orig.call(gain, lim); orig.call(lim, ctx.destination);
+            ch = { lo, mid, hi, gain, lim }; EQ.nodes.set(ctx, ch); EQ.all.push(ch);
             setEq();
           }
           return orig.call(this, ch.lo, ...rest);
@@ -53,7 +56,9 @@
       return orig.call(this, dest, ...rest);
     };
   })();
-  function setEq() { for (const c of EQ.all) { c.lo.gain.value = eqGain('b'); c.mid.gain.value = eqGain('m'); c.hi.gain.value = eqGain('t'); } }
+  const REAL_MAKEUP_DB = 6, REAL_BASS_DB = 4;
+  function bankReal() { try { return SOUND.cur === 'real'; } catch (e) { return false; } }
+  function setEq() { const g = bankReal() ? Math.pow(10, REAL_MAKEUP_DB / 20) : 1; for (const c of EQ.all) { c.lo.gain.value = eqGain('b'); c.mid.gain.value = eqGain('m'); c.hi.gain.value = eqGain('t'); c.gain.gain.value = g; } }
   function readPrefs() { try { return JSON.parse(localStorage.getItem(PREF_KEY) || '{}'); } catch (e) { return {}; } }
   function savePrefs() { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch (e) { /* armazenamento indisponível */ } }
 
@@ -229,6 +234,7 @@
   api.soundFontLoaded.on(() => {
     if (SOUND.pending) {
       SOUND.cur = SOUND.pending; SOUND.pending = null;
+      setEq(); syncFocus();
       if (SOUND.why === 'tone') { const b = $('tnBusy'); if (b) b.textContent = ''; toast('Timbre aplicado', 'ok'); }
       else if (SOUND.why !== 'start') toast(SOUND.cur === 'real' ? 'Som realista ligado' : 'Som leve ligado', 'ok');
       if (SOUND.resume) { SOUND.resume = false; setTimeout(() => api.play(), 150); }
@@ -1092,16 +1098,18 @@
   const FOCUS_DB = { 1: 2, 2: 4, 3: 6 };
   function focusDb() { return prefs.focusVol ? (FOCUS_DB[prefs.focusLvl] || 2) : 0; }
   function focusGain(t) { const db = focusDb(); return db && S.score && S.score.tracks.length > 1 && t.index === S.primary ? Math.pow(10, db / 20) : 1; }
-  function trackVol(t) { const m = S.mix[t.index]; return (m ? m.vol : 1) * focusGain(t); }
+  // o baixo do banco Realista é gravado bem mais baixo que os outros instrumentos: corrige só no tocar (o Mixer não muda)
+  function bankGain(t) { const pg = t.playbackInfo.program; return bankReal() && !t.staves[0].isPercussion && pg >= 32 && pg <= 39 ? Math.pow(10, REAL_BASS_DB / 20) : 1; }
+  function trackVol(t) { const m = S.mix[t.index]; return (m ? m.vol : 1) * focusGain(t) * bankGain(t); }
   function applyMix() {
     if (!S.score) return;
     for (const t of S.score.tracks) { const m = S.mix[t.index]; if (m) { api.changeTrackMute([t], m.mute); api.changeTrackSolo([t], m.solo); } }
     // a destacada por último: se dividir o canal de som com outra trilha, o destaque vale para o canal
     const order = S.score.tracks.filter(t => t.index !== S.primary).concat(S.score.tracks.filter(t => t.index === S.primary));
     for (const t of order) api.changeTrackVolume([t], trackVol(t));
-    S.focusKey = focusDb() + ':' + S.primary;
+    S.focusKey = focusDb() + ':' + S.primary + ':' + bankReal();
   }
-  function syncFocus() { if (S.score && !waitMidi && S.focusKey !== focusDb() + ':' + S.primary) applyMix(); }
+  function syncFocus() { if (S.score && !waitMidi && S.focusKey !== focusDb() + ':' + S.primary + ':' + bankReal()) applyMix(); }
   function buildTrackList() {
     const box = $('trackList'); box.innerHTML = '';
     if (!S.score) return;
